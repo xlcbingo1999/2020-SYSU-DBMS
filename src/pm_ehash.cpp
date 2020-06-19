@@ -1,12 +1,40 @@
-#include"pm_ehash.h"
+#include "pm_ehash.h"
 
+#include <libpmem.h>
+
+#include <iterator>
 /**
  * @description: construct a new instance of PmEHash in a default directory
  * @param NULL
  * @return: new instance of PmEHash
  */
 PmEHash::PmEHash() {
-
+    struct data_page* new_page = new data_page;
+    metadata->max_file_id = 1;
+    metadata->catalog_size = 0;
+    metadata->global_depth = 1;
+    struct pm_bucket* bucket0 = new pm_bucket;
+    bucket0->local_depth = 1;
+    bucket0->bitmap[0] = 0;
+    bucket0->bitmap[1] = 0;
+    free_list.push(bucket0);
+    struct pm_bucket* bucket1 = new pm_bucket;
+    bucket1->local_depth = 1;
+    bucket1->bitmap[0] = 0;
+    bucket1->bitmap[1] = 0;
+    free_list.push(bucket1);
+    catalog.buckets_pm_address = new pm_address[2];
+    catalog.buckets_pm_address[0].fileId = 0;
+    catalog.buckets_pm_address[0].offset = 0;
+    catalog.buckets_pm_address[1].fileId = 0;
+    catalog.buckets_pm_address[1].offset = 256;
+    catalog.buckets_virtual_address = new pm_bucket*[2];
+    catalog.buckets_virtual_address[0] = bucket0;
+    catalog.buckets_virtual_address[1] = bucket1;
+    vAddr2pmAddr.insert(std::make_pair(catalog.buckets_virtual_address[0], catalog.buckets_pm_address[0]));
+    vAddr2pmAddr.insert(std::make_pair(catalog.buckets_virtual_address[1], catalog.buckets_pm_address[1]));
+    pmAddr2vAddr.insert(std::make_pair(catalog.buckets_pm_address[0], catalog.buckets_virtual_address[0]));
+    pmAddr2vAddr.insert(std::make_pair(catalog.buckets_pm_address[1], catalog.buckets_virtual_address[1]));
 }
 /**
  * @description: persist and munmap all data in NVM
@@ -14,7 +42,6 @@ PmEHash::PmEHash() {
  * @return: NULL
  */
 PmEHash::~PmEHash() {
-
 }
 
 /**
@@ -23,7 +50,14 @@ PmEHash::~PmEHash() {
  * @return: 0 = insert successfully, -1 = fail to insert(target data with same key exist)
  */
 int PmEHash::insert(kv new_kv_pair) {
-    return 1;
+    uint64_t returnSearchValue;
+    if (search(new_kv_pair.key, returnSearchValue) == 0) return -1;
+    pm_bucket* toInsertBucket = getFreeBucket(new_kv_pair.key);
+    kv* freePlace = getFreeKvSlot(toInsertBucket);
+    freePlace->key = new_kv_pair.key;
+    freePlace->value = new_kv_pair.value;
+    pmem_persist(new_kv_data, map_len);
+    return 0;
 }
 
 /**
@@ -58,7 +92,8 @@ int PmEHash::search(uint64_t key, uint64_t& return_val) {
  * @return: 返回键所属的桶号
  */
 uint64_t PmEHash::hashFunc(uint64_t key) {
-
+    uint64_t bucketID = key & ((1 << metadata->global_depth) - 1);
+    return bucketID;
 }
 
 /**
@@ -67,7 +102,8 @@ uint64_t PmEHash::hashFunc(uint64_t key) {
  * @return: 空闲桶的虚拟地址
  */
 pm_bucket* PmEHash::getFreeBucket(uint64_t key) {
-
+    uint64_t bucketID = hashFunc(key);
+    // 先使用位图看看需不需要split
 }
 
 /**
@@ -76,7 +112,37 @@ pm_bucket* PmEHash::getFreeBucket(uint64_t key) {
  * @return: 空闲键值对位置的虚拟地址
  */
 kv* PmEHash::getFreeKvSlot(pm_bucket* bucket) {
-
+    uint8_t bucket_map[2];
+    bucket_map[0] = bucket->bitmap[0];
+    bucket_map[1] = bucket->bitmap[1];
+    uint8_t toInsertSlotIndex;
+    uint8_t temp = 256;
+    for (toInsertSlotIndex = 0; toInsertSlotIndex < 8; ++toInsertSlotIndex) {
+        if (bucket_map[0] & temp == 0) {
+            break;
+        } else {
+            temp >> 1;
+        }
+    }
+    if (temp == 0) {
+        temp = 256;
+        for (toInsertSlotIndex = 8; toInsertSlotIndex < 15; ++toInsertSlotIndex) {
+            if (bucket_map[1] & temp == 0) {
+                break;
+            } else {
+                temp >> 1;
+            }
+        }
+        if (temp == 1) {
+            // 没有槽可以用了，分裂bucket
+            printf("Wrong!");
+            return NULL;
+        }
+    }
+    size_t map_len;
+    int is_pmem;
+    kv* new_kv_data = pmem_map_file(PATH, sizeof(kv), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
+    return new_kv_data;
 }
 
 /**
@@ -85,7 +151,6 @@ kv* PmEHash::getFreeKvSlot(pm_bucket* bucket) {
  * @return: NULL
  */
 void PmEHash::splitBucket(uint64_t bucket_id) {
-
 }
 
 /**
@@ -94,7 +159,6 @@ void PmEHash::splitBucket(uint64_t bucket_id) {
  * @return: NULL
  */
 void PmEHash::mergeBucket(uint64_t bucket_id) {
-    
 }
 
 /**
@@ -103,7 +167,6 @@ void PmEHash::mergeBucket(uint64_t bucket_id) {
  * @return: NULL
  */
 void PmEHash::extendCatalog() {
-
 }
 
 /**
@@ -112,7 +175,6 @@ void PmEHash::extendCatalog() {
  * @return: 新槽位的虚拟地址
  */
 void* PmEHash::getFreeSlot(pm_address& new_address) {
-
 }
 
 /**
@@ -121,7 +183,6 @@ void* PmEHash::getFreeSlot(pm_address& new_address) {
  * @return: NULL
  */
 void PmEHash::allocNewPage() {
-
 }
 
 /**
@@ -130,7 +191,6 @@ void PmEHash::allocNewPage() {
  * @return: NULL
  */
 void PmEHash::recover() {
-
 }
 
 /**
@@ -139,7 +199,6 @@ void PmEHash::recover() {
  * @return: NULL
  */
 void PmEHash::mapAllPage() {
-
 }
 
 /**
@@ -148,5 +207,4 @@ void PmEHash::mapAllPage() {
  * @return: NULL
  */
 void PmEHash::selfDestory() {
-
 }

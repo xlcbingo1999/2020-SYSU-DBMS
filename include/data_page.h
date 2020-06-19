@@ -9,6 +9,8 @@
 typedef struct data_page {
     // fixed-size record design
     // uncompressed page format
+    uint16_t bitmap;
+    uint8_t byte[4096];
 } data_page;
 
 #endif
