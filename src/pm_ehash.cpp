@@ -167,6 +167,29 @@ void PmEHash::mergeBucket(uint64_t bucket_id) {
  * @return: NULL
  */
 void PmEHash::extendCatalog() {
+    uint64_t ori_cata_size = metadata->catalog_size;
+    uint64_t free_bucket_size = free_list.size();
+    ehash_catalog temp_catalog;
+    temp_catalog.buckets_pm_address = new pm_address[ori_cata_size];
+    temp_catalog.buckets_virtual_address = new pm_bucket*[ori_cata_size];
+    for(int i = 0; i < ori_cata_size; ++i){
+        temp_catalog.buckets_pm_address[i] = catalog.buckets_pm_address[i];
+        temp_catalog.buckets_virtual_address[i] = catalog.buckets_virtual_address[i];
+    }
+    catalog.buckets_pm_address = new pm_address[ori_cata_size * 2];
+    catalog.buckets_virtual_address = new pm_bucket*[ori_cata_size * 2];
+    for(int i = 0; i < ori_cata_size; ++i){
+        catalog.buckets_pm_address[i] = temp_catalog.buckets_pm_address[i];
+        catalog.buckets_virtual_address[i] = temp_catalog.buckets_virtual_address[i];
+    }
+    if(ori_cata_size <= free_bucket_size){
+        for(int i = 0; i < ori_cata_size; ++i){
+            
+        }
+    } else {
+        
+    }
+    
 }
 
 /**
@@ -183,6 +206,43 @@ void* PmEHash::getFreeSlot(pm_address& new_address) {
  * @return: NULL
  */
 void PmEHash::allocNewPage() {
+    std::string file_name = "/mnt/pmemdir/file_name";
+    uint64_t name_id = metadata->max_file_id;
+    std::string name_id_str = std::to_string(name_id);
+    file_name += name_id_str;
+    const char *file_name_c = file_name.c_str();
+    data_page *new_page = new data_page(file_name_c);
+    new_page->bitmap = 0;
+    for(int i = 0; i < 14; ++i){
+        new_page->unused_byte_in_data_page[i] = 0;
+    }
+    data_page *temp_page_table[name_id];
+    for(int i = 0 ; i < name_id; ++i){
+        temp_page_table[i] = page_pointer_table[i];
+    }
+    page_pointer_table = new data_page* [name_id+1];
+    for(int i = 0 ; i < name_id; ++i){
+        page_pointer_table[i] = temp_page_table[i];
+    }
+    page_pointer_table[name_id] = new_page;
+    struct pm_bucket *new_bucket[16];
+    for(int j = 0; j < 16; ++j){
+        new_bucket[j]->bitmap[0] = 0;
+        new_bucket[j]->bitmap[1] = 0;
+        for(int i = 0; i < BUCKET_SLOT_NUM; ++i){
+            new_bucket[j]->slot[i].key = 0;
+            new_bucket[j]->slot[i].value = 0;
+        }
+        free_list.push(new_bucket[j]);
+    }
+    struct pm_address new_address[16];
+    for(int j = 0; j < 16; ++j){
+        new_address[j].fileId = metadata->max_file_id;
+        new_address[j].offset = 2 + j * 255;
+        vAddr2pmAddr.insert(std::make_pair(new_bucket[j],new_address[j]));
+        pmAddr2vAddr.insert(std::make_pair(new_address[j],new_bucket[j]));
+    }
+    metadata->max_file_id = metadata->max_file_id + 1;
 }
 
 /**

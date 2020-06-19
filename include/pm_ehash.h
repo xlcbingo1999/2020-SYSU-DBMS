@@ -4,6 +4,7 @@
 #include<cstdint>
 #include<queue>
 #include<map>
+#include<string>
 #include"data_page.h"
 
 #define BUCKET_SLOT_NUM               15
@@ -62,6 +63,8 @@ class PmEHash
 {
 private:
     
+    data_page **page_pointer_table;
+
     ehash_metadata* metadata;                    // virtual address of metadata, mapping the metadata file
     ehash_catalog catalog;                        // the catalog of hash
 
