@@ -4,6 +4,8 @@
 #include<cstdint>
 #include<queue>
 #include<map>
+#include<libpmem.h>
+#include<iterator>
 #include<string>
 #include"data_page.h"
 
@@ -25,6 +27,9 @@ typedef struct pm_address
 {
     uint32_t fileId;
     uint32_t offset;
+    bool operator < (const pm_address &o) const {
+        return (fileId < o.fileId) || (fileId == o.fileId && offset < o.offset);
+    }
 } pm_address;
 
 /*
@@ -71,9 +76,6 @@ private:
     queue<pm_bucket*> free_list;                      //all free slots in data pages to store buckets
     map<pm_bucket*, pm_address> vAddr2pmAddr;       // map virtual address to pm_address, used to find specific pm_address
     map<pm_address, pm_bucket*> pmAddr2vAddr;       // map pm_address to virtual address, used to find specific virtual address
-    
-    // 这里加一个pm_bucket**用于方便地寻找到虚拟的bucket
-
 
     uint64_t hashFunc(uint64_t key);
 
@@ -85,9 +87,9 @@ private:
     void splitBucket(uint64_t bucket_id);
     void mergeBucket(uint64_t bucket_id);
 
-    void extendCatalog(); // 这里用于扩充目录
+    void extendCatalog();
     void* getFreeSlot(pm_address& new_address);
-    void allocNewPage(); // 在这里使用pmem
+    void allocNewPage();
 
     void recover();
     void mapAllPage();

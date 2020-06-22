@@ -5,9 +5,19 @@
 
 // use pm_address to locate the data in the page
 
+
+// use pm_address to locate the data in the page
+
+typedef struct bucket_inner_kv {
+    uint64_t key;
+    uint64_t value;
+} bucket_inner_kv;
+
 typedef struct page_inner_bucket {
     // 32bytes
-    uint8_t mem[255];
+    uint8_t bitmap[2];
+    bucket_inner_kv inner_kv[15];
+    uint8_t unused_byte_in_inner_bucket[13];
 } page_inner_bucket;
 
 // uncompressed page format design to store the buckets of PmEHash
@@ -16,9 +26,8 @@ typedef struct data_page {
     // fixed-size record design
     // uncompressed page format
     uint16_t bitmap;
+    page_inner_bucket page_bucket[DATA_PAGE_SLOT_NUM];
     uint8_t unused_byte_in_data_page[14];
-    struct page_inner_bucket *page_bucket[DATA_PAGE_SLOT_NUM];
-    data_page(const char* file_name);
 } data_page;
 
 #endif
