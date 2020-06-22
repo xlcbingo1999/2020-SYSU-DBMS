@@ -1,5 +1,130 @@
-#include "pm_ehash.h"
 
+#include <cstdint>
+#include <libpmem.h>
+#include <map>
+#include <queue>
+#include <stdio.h>
+#include <string>
+#include <time.h>
+#include <unistd.h>
+
+#define BUCKET_SLOT_NUM 15
+#define DEFAULT_CATALOG_SIZE 16
+#define META_NAME "pm_ehash_metadata";
+#define CATALOG_NAME "pm_ehash_catalog";
+#define PM_EHASH_DIRECTORY ""; // add your own directory path to store the pm_ehash
+
+using std::map;
+using std::queue;
+#define DATA_PAGE_SLOT_NUM 16
+
+// use pm_address to locate the data in the page
+
+typedef struct bucket_inner_kv {
+    uint64_t key;
+    uint64_t value;
+} bucket_inner_kv;
+
+typedef struct page_inner_bucket {
+    // 32bytes
+    uint8_t bitmap[2];
+    bucket_inner_kv inner_kv[15];
+    uint8_t unused_byte_in_inner_bucket[13];
+} page_inner_bucket;
+
+// uncompressed page format design to store the buckets of PmEHash
+// one slot stores one bucket of PmEHash
+typedef struct data_page {
+    // fixed-size record design
+    // uncompressed page format
+    uint16_t bitmap;
+    page_inner_bucket page_bucket[DATA_PAGE_SLOT_NUM];
+    uint8_t unused_byte_in_data_page[14];
+} data_page;
+
+/* 
+---the physical address of data in NVM---
+fileId: 1-N, the data page name
+offset: data offset in the file
+*/
+typedef struct pm_address {
+    uint32_t fileId;
+    uint32_t offset;
+    bool operator < (const pm_address &o) const {
+        return (fileId < o.fileId) || (fileId == o.fileId && offset < o.offset);
+    }
+} pm_address;
+
+/*
+the data entry stored by the  ehash
+*/
+typedef struct kv {
+    uint64_t key;
+    uint64_t value;
+} kv;
+
+typedef struct pm_bucket {
+    uint64_t local_depth;
+    uint8_t bitmap[BUCKET_SLOT_NUM / 8 + 1]; // one bit for each slot
+    kv slot[BUCKET_SLOT_NUM]; // one slot for one kv-pair
+    // bool operator < (const pm_address &o) const {
+    //     return (fileId < o.fileId) || (fileId == o.fileId && offset < o.offset);
+    // }
+} pm_bucket;
+
+// in ehash_catalog, the virtual address of buckets_pm_address[n] is stored in buckets_virtual_address
+// buckets_pm_address: open catalog file and store the virtual address of file
+// buckets_virtual_address: store virtual address of bucket that each buckets_pm_address points to
+typedef struct ehash_catalog {
+    pm_address* buckets_pm_address; // pm address array of buckets
+    pm_bucket** buckets_virtual_address; // virtual address of buckets that buckets_pm_address point to
+} ehash_catalog;
+
+typedef struct ehash_metadata {
+    uint64_t max_file_id; // next file id that can be allocated
+    uint64_t catalog_size; // the catalog size of catalog file(amount of data entry)
+    uint64_t global_depth; // global depth of PmEHash
+} ehash_metadata;
+
+class PmEHash {
+private:
+    data_page** page_pointer_table;
+
+    ehash_metadata* metadata; // virtual address of metadata, mapping the metadata file
+    ehash_catalog catalog; // the catalog of hash
+
+    queue<pm_bucket*> free_list; //all free slots in data pages to store buckets
+    map<pm_bucket*, pm_address> vAddr2pmAddr; // map virtual address to pm_address, used to find specific pm_address
+    map<pm_address, pm_bucket*> pmAddr2vAddr; // map pm_address to virtual address, used to find specific virtual address
+
+    uint64_t hashFunc(uint64_t key);
+
+    pm_bucket* getFreeBucket(uint64_t key);
+    pm_bucket* getNewBucket();
+    void freeEmptyBucket(pm_bucket* bucket);
+    kv* getFreeKvSlot(pm_bucket* bucket);
+
+    void splitBucket(uint64_t bucket_id);
+    void mergeBucket(uint64_t bucket_id);
+
+    void extendCatalog();
+    void* getFreeSlot(pm_address& new_address);
+    void allocNewPage();
+
+    void recover();
+    void mapAllPage();
+
+public:
+    PmEHash();
+    ~PmEHash();
+
+    int insert(kv new_kv_pair);
+    int remove(uint64_t key);
+    int update(kv kv_pair);
+    int search(uint64_t key, uint64_t& return_val);
+    void display();
+    void selfDestory();
+};
 
 /**
  * @description: construct a new instance of PmEHash in a default directory
@@ -122,6 +247,26 @@ int PmEHash::search(uint64_t key, uint64_t& return_val)
         temp >>= 1;
     }
     return -1;
+}
+
+
+
+/**
+ * @description: 用于display
+ * @param: NULL
+ * @return: NULL
+ */
+void PmEHash::display()
+{
+    printf("metadata->global_depth:%ld\n",metadata->global_depth);
+    for(int i = 0; i < metadata->catalog_size; ++i){
+        printf("%d:",i);
+        printf("%x %x",catalog.buckets_virtual_address[i]->bitmap[0],catalog.buckets_virtual_address[i]->bitmap[1]);
+        for(int j = 0; j < 15; ++j){
+            printf("{%ld, %ld}", catalog.buckets_virtual_address[i]->slot[j].key, catalog.buckets_virtual_address[i]->slot[j].value);
+        }
+        printf("\n");
+    }
 }
 
 /**
@@ -365,6 +510,7 @@ void PmEHash::allocNewPage()
  */
 void PmEHash::recover()
 {
+    
 }
 
 /**
@@ -374,6 +520,7 @@ void PmEHash::recover()
  */
 void PmEHash::mapAllPage()
 {
+
 }
 
 /**
@@ -418,8 +565,47 @@ void PmEHash::selfDestory()
     metadata->catalog_size = 0;
 }
 
-// void my_swap(uint64_t& a,uint64_t& b){
-//     uint64_t temp = a;
-//     a = b;
-//     b = temp;
-// }
+void my_swap(uint64_t& a,uint64_t& b){
+    uint64_t temp = a;
+    a = b;
+    b = temp;
+}
+
+int main()
+{
+    srand((unsigned)time(0));
+    PmEHash* pmh = new PmEHash;
+    int num = 128;
+    kv aaaa;
+    uint64_t qq[400];
+    // qq[0] = 2;
+    for(int i = 0; i < num; ++i){
+        qq[i] = i;
+    }
+    // for(int i = num - 1; i >= 1; --i){
+    //     my_swap(qq[i],qq[rand()%i]);
+    // }
+    kv aa;
+    for(int i = 0; i < num; ++i){
+        aa.key = qq[i];
+        aa.value = qq[i] * 2;
+        pmh->insert(aa);
+        if(i % 16 == 0){
+            pmh->display();
+        }
+    }
+    
+    // uint64_t vlu;
+    // for(int i = 0; i < num; ++i){
+    //     pmh->search(qq[i], vlu);
+    //     printf("key: %ld, value: %ld\n",qq[i], vlu);
+    // }
+    pmh->selfDestory();
+    // uint64_t new_vlu;
+    // aaaa.key = 60;
+    // aaaa.value = 60 * 2;
+    // pmh->insert(aaaa); 
+    // pmh->search(60, new_vlu); // cannot find dest
+    // printf("key: %d, value: %ld\n",60, new_vlu);
+    // pmh->~PmEHash();
+}

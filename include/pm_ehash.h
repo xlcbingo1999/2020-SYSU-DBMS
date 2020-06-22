@@ -101,6 +101,7 @@ public:
     int insert(kv new_kv_pair);
     int remove(uint64_t key);
     int update(kv kv_pair);
+    void display();
     int search(uint64_t key, uint64_t& return_val);
 
     void selfDestory();
