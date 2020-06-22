@@ -37,7 +37,7 @@ typedef struct page_inner_bucket {
 typedef struct data_page {
     // fixed-size record design
     // uncompressed page format
-    uint16_t bitmap;
+    uint16_t bitmap; 
     page_inner_bucket page_bucket[DATA_PAGE_SLOT_NUM];
     uint8_t unused_byte_in_data_page[14];
 } data_page;
@@ -89,6 +89,7 @@ typedef struct ehash_metadata {
 class PmEHash {
 private:
     data_page** page_pointer_table;
+    
 
     ehash_metadata* metadata; // virtual address of metadata, mapping the metadata file
     ehash_catalog catalog; // the catalog of hash
@@ -160,9 +161,10 @@ PmEHash::PmEHash()
  */
 PmEHash::~PmEHash()
 {
+    pmem_persist(metadata, sizeof(ehash_metadata));
     pmem_unmap(metadata, sizeof(ehash_metadata));
     for (int i = 0; i < metadata->max_file_id; ++i) {
-        // pmem_persist(page_pointer_table[i], sizeof(data_page));
+        pmem_persist(page_pointer_table[i], sizeof(data_page));
         pmem_unmap(page_pointer_table[i], sizeof(data_page));
     }
 }
@@ -202,7 +204,36 @@ int PmEHash::insert(kv new_kv_pair)
  */
 int PmEHash::remove(uint64_t key)
 {
-    return 1;
+    uint64_t returnSearchValue;
+    if (search(key, returnSearchValue) == -1) return -1;
+    uint64_t bucketID = hashFunc(key);
+    uint8_t temp = 128;
+    uint32_t fid = vAddr2pmAddr.find(catalog.buckets_virtual_address[bucketID])->second.fileId;
+    
+    for(int i = 0; i < 8; ++i){
+        if((catalog.buckets_virtual_address[bucketID]->bitmap[0] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == key){
+            catalog.buckets_virtual_address[bucketID]->bitmap[0] &= (~(1 << (7 - i)));
+            page_pointer_table[fid]->page_bucket->bitmap[0] &= (~(1 << (7 - i)));
+            if(catalog.buckets_virtual_address[bucketID]->bitmap[0] == 0 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 0){
+                mergeBucket(bucketID);
+            }
+            return 0;
+        }
+        temp >>= 1;
+    }
+    temp = 128;
+    for(int i = 8; i < 15; ++i){
+        if((catalog.buckets_virtual_address[bucketID]->bitmap[1] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == key){
+            catalog.buckets_virtual_address[bucketID]->bitmap[1] &= (~(1 << (15 - i)));
+            page_pointer_table[fid]->page_bucket->bitmap[1] &= (~(1 << (15 - i)));
+            if(catalog.buckets_virtual_address[bucketID]->bitmap[0] == 0 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 0){
+                mergeBucket(bucketID);
+            }
+            return 0;
+        }
+        temp >>= 1;
+    }
+    return -1;
 }
 /**
  * @description: 更新现存的键值对的值
@@ -211,7 +242,34 @@ int PmEHash::remove(uint64_t key)
  */
 int PmEHash::update(kv kv_pair)
 {
-    return 1;
+    uint64_t returnSearchValue;
+    if (search(kv_pair.key, returnSearchValue) == -1) return -1;
+    uint64_t bucketID = hashFunc(kv_pair.key);
+    uint8_t bit_map[2];
+    bit_map[0] = catalog.buckets_virtual_address[bucketID]->bitmap[0];
+    bit_map[1] = catalog.buckets_virtual_address[bucketID]->bitmap[1];
+    uint32_t fid = vAddr2pmAddr.find(catalog.buckets_virtual_address[bucketID])->second.fileId;
+    uint32_t off = vAddr2pmAddr.find(catalog.buckets_virtual_address[bucketID])->second.offset;
+    uint32_t index = (off - 2) / 255;
+    uint8_t temp = 128;
+    for(int i = 0; i < 8; ++i){
+        if((bit_map[0] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == kv_pair.key){
+            catalog.buckets_virtual_address[bucketID]->slot[i].value = kv_pair.value;
+            page_pointer_table[fid]->page_bucket->inner_kv[index].value = kv_pair.value;
+            return 0;
+        }
+        temp >>= 1;
+    }
+    temp = 128;
+    for(int i = 8; i < 15; ++i){
+        if((bit_map[1] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == kv_pair.key){
+            catalog.buckets_virtual_address[bucketID]->slot[i].value = kv_pair.value;
+            page_pointer_table[fid]->page_bucket->inner_kv[index].value = kv_pair.value;
+            return 0;
+        }
+        temp >>= 1;
+    }
+    return -1;
 }
 /**
  * @description: 查找目标键值对数据，将返回值放在参数里的引用类型进行返回
@@ -260,10 +318,21 @@ void PmEHash::display()
 {
     printf("metadata->global_depth:%ld\n",metadata->global_depth);
     for(int i = 0; i < metadata->catalog_size; ++i){
-        printf("%d:",i);
-        printf("%x %x",catalog.buckets_virtual_address[i]->bitmap[0],catalog.buckets_virtual_address[i]->bitmap[1]);
-        for(int j = 0; j < 15; ++j){
-            printf("{%ld, %ld}", catalog.buckets_virtual_address[i]->slot[j].key, catalog.buckets_virtual_address[i]->slot[j].value);
+        printf("bucket %02d:",i);
+        printf("{%02x%02x}",catalog.buckets_virtual_address[i]->bitmap[0],catalog.buckets_virtual_address[i]->bitmap[1]);
+        uint8_t temp = 128;
+        for(int j = 0; j < 8; ++j){
+            if((catalog.buckets_virtual_address[i]->bitmap[0] & temp) != 0){
+                printf("[%03ld,%03ld] ", catalog.buckets_virtual_address[i]->slot[j].key,catalog.buckets_virtual_address[i]->slot[j].value);
+            }
+            temp >>= 1;
+        }
+        temp = 128;
+        for(int j = 8; j < 15; ++j){
+            if((catalog.buckets_virtual_address[i]->bitmap[1] & temp) != 0){
+                printf("[%03ld,%03ld] ", catalog.buckets_virtual_address[i]->slot[j].key,catalog.buckets_virtual_address[i]->slot[j].value);
+            }
+            temp >>= 1;
         }
         printf("\n");
     }
@@ -406,6 +475,7 @@ void PmEHash::splitBucket(uint64_t bucket_id)
  */
 void PmEHash::mergeBucket(uint64_t bucket_id)
 {
+    
 }
 
 /**
@@ -575,9 +645,9 @@ int main()
 {
     srand((unsigned)time(0));
     PmEHash* pmh = new PmEHash;
-    int num = 128;
+    int num = 512;
     kv aaaa;
-    uint64_t qq[400];
+    uint64_t qq[1000];
     // qq[0] = 2;
     for(int i = 0; i < num; ++i){
         qq[i] = i;
@@ -590,16 +660,18 @@ int main()
         aa.key = qq[i];
         aa.value = qq[i] * 2;
         pmh->insert(aa);
-        if(i % 16 == 0){
-            pmh->display();
-        }
+        // if(i % 64 == 0){
+        //     pmh->display();
+        // }
     }
-    
-    // uint64_t vlu;
-    // for(int i = 0; i < num; ++i){
-    //     pmh->search(qq[i], vlu);
-    //     printf("key: %ld, value: %ld\n",qq[i], vlu);
-    // }
+    pmh->display();
+    // uint64_t vlu = 0;
+    for(int i = 0; i < num; ++i){
+        aa.key = qq[i];
+        aa.value = i * 12;
+        pmh->update(aa);
+    }
+    pmh->display();
     pmh->selfDestory();
     // uint64_t new_vlu;
     // aaaa.key = 60;

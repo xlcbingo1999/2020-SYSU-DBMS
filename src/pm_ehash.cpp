@@ -28,6 +28,7 @@ PmEHash::PmEHash()
         catalog.buckets_virtual_address[i] = new_bucket;
     }
 }
+
 /**
  * @description: persist and munmap all data in NVM
  * @param NULL 
@@ -35,9 +36,10 @@ PmEHash::PmEHash()
  */
 PmEHash::~PmEHash()
 {
+    pmem_persist(metadata, sizeof(ehash_metadata));
     pmem_unmap(metadata, sizeof(ehash_metadata));
     for (int i = 0; i < metadata->max_file_id; ++i) {
-        // pmem_persist(page_pointer_table[i], sizeof(data_page));
+        pmem_persist(page_pointer_table[i], sizeof(data_page));
         pmem_unmap(page_pointer_table[i], sizeof(data_page));
     }
 }
