@@ -60,7 +60,7 @@ int PmEHash::insert(kv new_kv_pair)
     pm_address persist_address = vAddr2pmAddr.find(toInsertBucket)->second;
     uint32_t fid = persist_address.fileId;
     int index_bitmap = (persist_address.offset - 2) / 255;
-    page_pointer_table[fid]->bitmap ^= (page_pointer_table[fid]->bitmap & (1 << (15 - index_bitmap)) ^ (1 << (15 - index_bitmap)));
+    // page_pointer_table[fid]->bitmap ^= (page_pointer_table[fid]->bitmap & (1 << (15 - index_bitmap)) ^ (1 << (15 - index_bitmap)));
     page_pointer_table[fid]->page_bucket[index_bitmap].bitmap[0] = toInsertBucket->bitmap[0];
     page_pointer_table[fid]->page_bucket[index_bitmap].bitmap[1] = toInsertBucket->bitmap[1];
     for (int i = 0; i < BUCKET_SLOT_NUM; ++i) {
@@ -146,6 +146,7 @@ pm_bucket* PmEHash::getFreeBucket(uint64_t key)
     uint64_t bucketID = hashFunc(key);
     while (catalog.buckets_virtual_address[bucketID]->bitmap[0] == 255 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 254) {
         splitBucket(bucketID);
+        bucketID = hashFunc(key);
     }
     return catalog.buckets_virtual_address[bucketID];
 }
@@ -221,7 +222,8 @@ void PmEHash::splitBucket(uint64_t bucket_id)
     uint64_t to_insert_bucketid;
     kv* temp_kv;
     for (int i = 0; i < BUCKET_SLOT_NUM; ++i) {
-        to_insert_bucketid = hashFunc(ori_kv[i].key) & ((1 << ori_bucket->local_depth) - 1);
+        to_insert_bucketid = hashFunc(ori_kv[i].key);
+        // to_insert_bucketid = hashFunc(ori_kv[i].key) & ((1 << ori_bucket->local_depth) - 1);
         temp_kv = getFreeKvSlot(catalog.buckets_virtual_address[to_insert_bucketid]);
         temp_kv->key = ori_kv[i].key;
         temp_kv->value = ori_kv[i].value;
@@ -231,7 +233,7 @@ void PmEHash::splitBucket(uint64_t bucket_id)
 
     uint32_t new_fid = new_pm_address.fileId;
     int index_bitmap = (new_pm_address.offset - 2) / 255;
-    page_pointer_table[new_fid]->bitmap = (1 << (15 - index_bitmap));
+    page_pointer_table[new_fid]->bitmap ^= (page_pointer_table[new_fid]->bitmap & (1 << (15 - index_bitmap)) ^ (1 << (15 - index_bitmap)));
     page_pointer_table[new_fid]->page_bucket[index_bitmap].bitmap[0] = new_bucket->bitmap[0];
     page_pointer_table[new_fid]->page_bucket[index_bitmap].bitmap[1] = new_bucket->bitmap[1];
     for (int i = 0; i < BUCKET_SLOT_NUM; ++i) {
@@ -243,7 +245,7 @@ void PmEHash::splitBucket(uint64_t bucket_id)
     pm_address ori_pm_address = vAddr2pmAddr.find(ori_bucket)->second;
     uint32_t ori_fid = ori_pm_address.fileId;
     index_bitmap = (ori_pm_address.offset - 2) / 255;
-    page_pointer_table[ori_fid]->bitmap = (1 << (15 - index_bitmap));
+    page_pointer_table[ori_fid]->bitmap ^= (page_pointer_table[ori_fid]->bitmap & (1 << (15 - index_bitmap)) ^ (1 << (15 - index_bitmap)));
     page_pointer_table[ori_fid]->page_bucket[index_bitmap].bitmap[0] = ori_bucket->bitmap[0];
     page_pointer_table[ori_fid]->page_bucket[index_bitmap].bitmap[1] = ori_bucket->bitmap[1];
     for (int i = 0; i < BUCKET_SLOT_NUM; ++i) {
@@ -286,6 +288,7 @@ void PmEHash::extendCatalog()
         catalog.buckets_pm_address[ori_cata_size + i] = temp_catalog.buckets_pm_address[i];
         catalog.buckets_virtual_address[ori_cata_size + i] = temp_catalog.buckets_virtual_address[i];
     }
+    metadata->catalog_size = ori_cata_size * 2;
     metadata->global_depth += 1;
 }
 
@@ -300,7 +303,7 @@ void* PmEHash::getFreeSlot(pm_address& new_address)
         allocNewPage();
     }
     pm_bucket* new_bucket = free_list.front();
-    new_bucket->local_depth = metadata->global_depth;
+    new_bucket->local_depth = metadata->global_depth; // maybe problem.
     free_list.pop();
     new_address = vAddr2pmAddr.find(new_bucket)->second;
     return new_bucket;
@@ -371,14 +374,5 @@ void PmEHash::recover()
  * @return: NULL
  */
 void PmEHash::mapAllPage()
-{
-}
-
-/**
- * @description: 删除PmEHash对象所有数据页，目录和元数据文件，主要供gtest使用。即清空所有可扩展哈希的文件数据，不止是内存上的
- * @param NULL
- * @return: NULL
- */
-void PmEHash::selfDestory()
 {
 }
