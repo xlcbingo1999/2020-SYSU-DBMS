@@ -318,7 +318,8 @@ void PmEHash::display()
 {
     printf("metadata->global_depth:%ld\n",metadata->global_depth);
     for(int i = 0; i < metadata->catalog_size; ++i){
-        printf("bucket %02d:",i);
+        printf("bucket %02d ",i);
+        printf("local_depth %ld ", catalog.buckets_virtual_address[i]->local_depth);
         printf("{%02x%02x}",catalog.buckets_virtual_address[i]->bitmap[0],catalog.buckets_virtual_address[i]->bitmap[1]);
         uint8_t temp = 128;
         for(int j = 0; j < 8; ++j){
@@ -475,7 +476,34 @@ void PmEHash::splitBucket(uint64_t bucket_id)
  */
 void PmEHash::mergeBucket(uint64_t bucket_id)
 {
-    
+    uint64_t mask = (1 << catalog.buckets_virtual_address[bucket_id]->local_depth);
+    uint64_t to_bucket_id = (bucket_id & (~mask)) | (bucket_id ^ mask);
+    catalog.buckets_virtual_address[to_bucket_id] = catalog.buckets_virtual_address[bucket_id];
+    free_list.push(catalog.buckets_virtual_address[bucket_id]);
+    catalog.buckets_virtual_address[bucket_id]->local_depth -= 1;
+    int i;
+    for (i = 0; i < metadata->catalog_size; ++i) {
+        if (catalog.buckets_virtual_address[i]->local_depth >= metadata->global_depth)
+            break;
+    }
+    if (i == metadata->catalog_size && i > 2) {
+        uint64_t ori_cata_size = metadata->catalog_size;
+        ehash_catalog temp_catalog;
+        temp_catalog.buckets_pm_address = new pm_address[ori_cata_size/2];
+        temp_catalog.buckets_virtual_address = new pm_bucket*[ori_cata_size/2];
+        for (int j = 0; j < ori_cata_size/2; ++j) {
+            temp_catalog.buckets_pm_address[j] = catalog.buckets_pm_address[j];
+            temp_catalog.buckets_virtual_address[j] = catalog.buckets_virtual_address[j];
+        }
+        catalog.buckets_pm_address = new pm_address[ori_cata_size/2];
+        catalog.buckets_virtual_address = new pm_bucket*[ori_cata_size/2];
+        for (int j = 0; j < ori_cata_size/2; ++j) {
+            catalog.buckets_pm_address[j] = temp_catalog.buckets_pm_address[j];
+            catalog.buckets_virtual_address[j] = temp_catalog.buckets_virtual_address[j];
+        }
+        metadata->catalog_size = ori_cata_size / 2;
+        metadata->global_depth -= 1;
+    }
 }
 
 /**
@@ -666,12 +694,17 @@ int main()
     }
     pmh->display();
     // uint64_t vlu = 0;
-    for(int i = 0; i < num; ++i){
+    for(int i = 0; i < 448; ++i){
         aa.key = qq[i];
-        aa.value = i * 12;
-        pmh->update(aa);
+        // aa.value = i * 12;
+        pmh->remove(aa.key);   
     }
     pmh->display();
+    for(int i = 448; i < 448 + 4; ++i){
+        aa.key = qq[i];
+        pmh->remove(aa.key);
+        pmh->display();
+    }
     pmh->selfDestory();
     // uint64_t new_vlu;
     // aaaa.key = 60;

@@ -1,6 +1,5 @@
 #include "pm_ehash.h"
 
-
 /**
  * @description: construct a new instance of PmEHash in a default directory
  * @param NULL
@@ -80,16 +79,17 @@ int PmEHash::insert(kv new_kv_pair)
 int PmEHash::remove(uint64_t key)
 {
     uint64_t returnSearchValue;
-    if (search(key, returnSearchValue) == -1) return -1;
+    if (search(key, returnSearchValue) == -1)
+        return -1;
     uint64_t bucketID = hashFunc(key);
     uint8_t temp = 128;
     uint32_t fid = vAddr2pmAddr.find(catalog.buckets_virtual_address[bucketID])->second.fileId;
-    
-    for(int i = 0; i < 8; ++i){
-        if((catalog.buckets_virtual_address[bucketID]->bitmap[0] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == key){
+
+    for (int i = 0; i < 8; ++i) {
+        if ((catalog.buckets_virtual_address[bucketID]->bitmap[0] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == key) {
             catalog.buckets_virtual_address[bucketID]->bitmap[0] &= (~(1 << (7 - i)));
             page_pointer_table[fid]->page_bucket->bitmap[0] &= (~(1 << (7 - i)));
-            if(catalog.buckets_virtual_address[bucketID]->bitmap[0] == 0 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 0){
+            if (catalog.buckets_virtual_address[bucketID]->bitmap[0] == 0 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 0) {
                 mergeBucket(bucketID);
             }
             return 0;
@@ -97,11 +97,11 @@ int PmEHash::remove(uint64_t key)
         temp >>= 1;
     }
     temp = 128;
-    for(int i = 8; i < 15; ++i){
-        if((catalog.buckets_virtual_address[bucketID]->bitmap[1] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == key){
+    for (int i = 8; i < 15; ++i) {
+        if ((catalog.buckets_virtual_address[bucketID]->bitmap[1] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == key) {
             catalog.buckets_virtual_address[bucketID]->bitmap[1] &= (~(1 << (15 - i)));
             page_pointer_table[fid]->page_bucket->bitmap[1] &= (~(1 << (15 - i)));
-            if(catalog.buckets_virtual_address[bucketID]->bitmap[0] == 0 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 0){
+            if (catalog.buckets_virtual_address[bucketID]->bitmap[0] == 0 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 0) {
                 mergeBucket(bucketID);
             }
             return 0;
@@ -119,7 +119,8 @@ int PmEHash::remove(uint64_t key)
 int PmEHash::update(kv kv_pair)
 {
     uint64_t returnSearchValue;
-    if (search(kv_pair.key, returnSearchValue) == -1) return -1;
+    if (search(kv_pair.key, returnSearchValue) == -1)
+        return -1;
     uint64_t bucketID = hashFunc(kv_pair.key);
     uint8_t bit_map[2];
     bit_map[0] = catalog.buckets_virtual_address[bucketID]->bitmap[0];
@@ -128,8 +129,8 @@ int PmEHash::update(kv kv_pair)
     uint32_t off = vAddr2pmAddr.find(catalog.buckets_virtual_address[bucketID])->second.offset;
     uint32_t index = (off - 2) / 255;
     uint8_t temp = 128;
-    for(int i = 0; i < 8; ++i){
-        if((bit_map[0] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == kv_pair.key){
+    for (int i = 0; i < 8; ++i) {
+        if ((bit_map[0] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == kv_pair.key) {
             catalog.buckets_virtual_address[bucketID]->slot[i].value = kv_pair.value;
             page_pointer_table[fid]->page_bucket->inner_kv[index].value = kv_pair.value;
             return 0;
@@ -137,8 +138,8 @@ int PmEHash::update(kv kv_pair)
         temp >>= 1;
     }
     temp = 128;
-    for(int i = 8; i < 15; ++i){
-        if((bit_map[1] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == kv_pair.key){
+    for (int i = 8; i < 15; ++i) {
+        if ((bit_map[1] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == kv_pair.key) {
             catalog.buckets_virtual_address[bucketID]->slot[i].value = kv_pair.value;
             page_pointer_table[fid]->page_bucket->inner_kv[index].value = kv_pair.value;
             return 0;
@@ -321,6 +322,34 @@ void PmEHash::splitBucket(uint64_t bucket_id)
  */
 void PmEHash::mergeBucket(uint64_t bucket_id)
 {
+    uint64_t mask = (1 << catalog.buckets_virtual_address[bucket_id]->local_depth);
+    uint64_t to_bucket_id = (bucket_id & (~mask)) | (bucket_id ^ mask);
+    catalog.buckets_virtual_address[to_bucket_id] = catalog.buckets_virtual_address[bucket_id];
+    free_list.push(catalog.buckets_virtual_address[bucket_id]);
+    catalog.buckets_virtual_address[bucket_id]->local_depth -= 1;
+    int i;
+    for (i = 0; i < metadata->catalog_size; ++i) {
+        if (catalog.buckets_virtual_address[i]->local_depth >= metadata->global_depth)
+            break;
+    }
+    if (i == metadata->catalog_size && i > 2) {
+        uint64_t ori_cata_size = metadata->catalog_size;
+        ehash_catalog temp_catalog;
+        temp_catalog.buckets_pm_address = new pm_address[ori_cata_size/2];
+        temp_catalog.buckets_virtual_address = new pm_bucket*[ori_cata_size/2];
+        for (int i = 0; i < ori_cata_size/2; ++i) {
+            temp_catalog.buckets_pm_address[i] = catalog.buckets_pm_address[i];
+            temp_catalog.buckets_virtual_address[i] = catalog.buckets_virtual_address[i];
+        }
+        catalog.buckets_pm_address = new pm_address[ori_cata_size/2];
+        catalog.buckets_virtual_address = new pm_bucket*[ori_cata_size/2];
+        for (int i = 0; i < ori_cata_size/2; ++i) {
+            catalog.buckets_pm_address[i] = temp_catalog.buckets_pm_address[i];
+            catalog.buckets_virtual_address[i] = temp_catalog.buckets_virtual_address[i];
+        }
+        metadata->catalog_size = ori_cata_size / 2;
+        metadata->global_depth -= 1;
+    }
 }
 
 /**
@@ -382,7 +411,7 @@ void PmEHash::allocNewPage()
     const char* file_name_c = file_name.c_str();
     size_t map_len;
     int is_pmem;
-    data_page* new_page = (data_page*)pmem_map_file(file_name_c,sizeof(data_page),PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
+    data_page* new_page = (data_page*)pmem_map_file(file_name_c, sizeof(data_page), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
     new_page->bitmap = 0;
     for (int i = 0; i < 14; ++i) {
         new_page->unused_byte_in_data_page[i] = 0;
@@ -399,7 +428,7 @@ void PmEHash::allocNewPage()
     struct pm_bucket** new_bucket = new pm_bucket*[16];
     for (int j = 0; j < 16; ++j) {
         new_bucket[j] = new pm_bucket;
-        
+
         new_bucket[j]->bitmap[0] = 0;
         new_bucket[j]->bitmap[1] = 0;
         for (int i = 0; i < BUCKET_SLOT_NUM; ++i) {
@@ -445,23 +474,23 @@ void PmEHash::selfDestory()
 {
     std::string file_name = "/mnt/pmemdir/file_name";
     uint64_t name_id = metadata->max_file_id;
-    for(uint64_t i = 0; i < name_id; ++i){
+    for (uint64_t i = 0; i < name_id; ++i) {
         std::string name_id_str = std::to_string(i);
         file_name += name_id_str;
         const char* file_name_c = file_name.c_str();
         std::remove(file_name_c);
     }
     std::remove("/mnt/pmemdir/ehash_metadata");
-    for(uint64_t i = 0; i < name_id; ++i){
+    for (uint64_t i = 0; i < name_id; ++i) {
         page_pointer_table[i] = NULL;
     }
-    for(int i = 0; i < metadata->catalog_size; ++i){
+    for (int i = 0; i < metadata->catalog_size; ++i) {
         catalog.buckets_pm_address[i].fileId = 0;
         catalog.buckets_pm_address[i].offset = 0;
         catalog.buckets_virtual_address[i]->bitmap[0] = 0;
         catalog.buckets_virtual_address[i]->bitmap[1] = 0;
         catalog.buckets_virtual_address[i]->local_depth = 0;
-        for(int j = 0; j < BUCKET_SLOT_NUM; ++j){
+        for (int j = 0; j < BUCKET_SLOT_NUM; ++j) {
             catalog.buckets_virtual_address[i]->slot[j].key = 0;
             catalog.buckets_virtual_address[i]->slot[j].value = 0;
         }
@@ -470,7 +499,7 @@ void PmEHash::selfDestory()
     vAddr2pmAddr.clear();
     pmAddr2vAddr.clear();
     int siz = free_list.size();
-    for(int i = 0; i < siz; ++i){
+    for (int i = 0; i < siz; ++i) {
         free_list.pop();
     }
     metadata->global_depth = 0;
