@@ -8,15 +8,24 @@
 #include <time.h>
 #include <set>
 #include <unistd.h>
+#include <vector>
+#include <fstream>
+#include <iostream>
+
 
 #define BUCKET_SLOT_NUM 15
 #define DEFAULT_CATALOG_SIZE 16
 #define META_NAME "pm_ehash_metadata";
 #define CATALOG_NAME "pm_ehash_catalog";
 #define PM_EHASH_DIRECTORY ""; // add your own directory path to store the pm_ehash
-
+#define CLOCKS_PER_SEC ((__clock_t)1000)
 using std::map;
 using std::queue;
+using std::fstream;
+using std::vector;
+using std::string;
+using std::cout;
+using std::endl;
 #define DATA_PAGE_SLOT_NUM 16
 
 // use pm_address to locate the data in the page
@@ -215,9 +224,9 @@ int PmEHash::remove(uint64_t key)
         if((catalog.buckets_virtual_address[bucketID]->bitmap[0] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == key){
             catalog.buckets_virtual_address[bucketID]->bitmap[0] &= (~(1 << (7 - i)));
             page_pointer_table[fid]->page_bucket->bitmap[0] &= (~(1 << (7 - i)));
-            if(catalog.buckets_virtual_address[bucketID]->bitmap[0] == 0 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 0){
-                mergeBucket(bucketID);
-            }
+            // if(catalog.buckets_virtual_address[bucketID]->bitmap[0] == 0 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 0){
+            //     mergeBucket(bucketID);
+            // }
             return 0;
         }
         temp >>= 1;
@@ -227,9 +236,9 @@ int PmEHash::remove(uint64_t key)
         if((catalog.buckets_virtual_address[bucketID]->bitmap[1] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == key){
             catalog.buckets_virtual_address[bucketID]->bitmap[1] &= (~(1 << (15 - i)));
             page_pointer_table[fid]->page_bucket->bitmap[1] &= (~(1 << (15 - i)));
-            if(catalog.buckets_virtual_address[bucketID]->bitmap[0] == 0 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 0){
-                mergeBucket(bucketID);
-            }
+            // if(catalog.buckets_virtual_address[bucketID]->bitmap[0] == 0 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 0){
+            //     mergeBucket(bucketID);
+            // }
             return 0;
         }
         temp >>= 1;
@@ -444,7 +453,12 @@ void PmEHash::splitBucket(uint64_t bucket_id)
     new_bucket->local_depth = ori_bucket->local_depth;
     new_bucket->bitmap[0] = 0;
     new_bucket->bitmap[1] = 0;
-    catalog.buckets_virtual_address[to_bucket_id] = new_bucket;
+    uint64_t yu = to_bucket_id % (1 << ori_bucket->local_depth);
+    for(int i = 0; i < metadata->catalog_size; ++i){
+        if((i % (1 << ori_bucket->local_depth)) == yu){
+            catalog.buckets_virtual_address[i] = new_bucket;
+        }
+    }
     uint64_t to_insert_bucketid;
     kv* temp_kv;
     for (int i = 0; i < BUCKET_SLOT_NUM; ++i) {
@@ -681,57 +695,218 @@ void my_swap(uint64_t& a,uint64_t& b){
     b = temp;
 }
 
-int main()
+// int main()
+// {
+//     srand((unsigned)time(0));
+//     PmEHash* pmh = new PmEHash;
+//     int num = 1024;
+//     kv aaaa;
+//     uint64_t qq[1024];
+//     // uint64_t qq[10000] = {17444,13944,549,30645,45389,39224,42456,189,52461,2829,7764,18516,11045,4116,245,54776,38829,36,20756,52920,34989,7589,344,42045,43701,50196,84,11684,19620,39621,19901,10020,25301,920,3045,53844,2136,59069,5204,3269,29,16661,29949,32781,23736,44964,24356,981,4920,2324,22221,5061,24045,25941,120,749,10629,34245,2724,37269,24984,8484,6581,36501,4245,60045,24669,63524,13476,49304,12564,10836,63021,65556,2045,1869,53381,1316,33144,48861,17181,38045,2229,276,3864,1109,26916,59556,27245,15396,12789,4376,13245,26264,101,41229,17976,36884,56189,55716,6420,1701,3384,62520,40824,14420,61524,28581,1245,32061,381,23429,22520,7245,48420,47109,17709,9821,27909,216,65045,6744,45816,18245,51096,11256,3741,30996,13016,35364,26589,21629,5496,52004,30296,55245,1044,16404,14661,11901,58584,8669,31349,861,3989,46245,29604,12341,40421,7416,2936,58101,6261,64536,16920,33509,45,21045,2621,10221,20184,1784,15896,42869,3501,6909,8301,64029,44541,24,2421,5349,18789,56664,38436,36120,4644,57620,21924,49749,54309,35741,9429,57141,41636,1541,27576,44120,47544,4781,11469,28920,40020,1956,47981,20469,23124,62021,7076,21,9236,696,14904,7941,16149,50645,1620,9045,37656,19064,13709,3156,60536,2520,14181,34616,21336,19341,3620,1464,31704,28244,141,5949,8856,12120,4509,15149,22821,164,61029,8120,25620,596,32420,5645,420,33876,10424,1176,9624,51549,46676,645,69,29261,309,461,804,6104,5796,43284,15645,504,1389,56};
+//     // uint64_t qq[32] = {1950, 1740, 1002, 1564, 604, 1030, 1897, 1528, 290, 1138,
+//     //                     1560, 387, 346, 715, 1417, 90, 1036, 1905, 1078, 373,
+//     //                     1747, 1034, 1503, 1154, 1282, 217, 685, 1163, 1266, 796,
+//     //                     1313, 1486};
+//     // qq[0] = 2;
+//     for(int i = 0; i < num; ++i){
+//         qq[i] = i;
+//     }
+//     for(int i = num - 1; i >= 1; --i){
+//         my_swap(qq[i],qq[rand()%i]);
+//     }
+//     kv aa;
+//     for(int i = 0; i < num; ++i){
+//         // scanf("%ld", &aa.key);
+//         // aa.key = (i + 1) * 4;
+//         aa.key = qq[i]; 
+//         // if(aa.key == 0) break;
+//         aa.value = aa.key * 2;
+//         printf("insert: %ld\t",aa.key);
+//         pmh->insert(aa);
+//         // if(i % 64 == 0){
+//         //     pmh->display();
+//         // }
+//         // pmh->display();
+//     }
+//     for(int i = num - 1; i >= 1; --i){
+//         my_swap(qq[i],qq[rand()%i]);
+//     }
+//     for(int i = 0; i < 1000; ++i){
+//         aa.key = qq[i];
+//         pmh->remove(aa.key);
+//     }
+//     pmh->display();
+//     // for(int i = 28; i < num/4; ++i){
+//     //     // scanf("%ld", &aa.key);
+//     //     // aa.key = (i + 1) * 4;
+//     //     aa.key = qq[i]; 
+//     //     // if(aa.key == 0) break;
+//     //     aa.value = aa.key * 2;
+//     //     printf("insert: %ld\t",aa.key);
+//     //     pmh->insert(aa);
+//     //     // if(i % 64 == 0){
+//     //     //     pmh->display();
+//     //     // }
+//     //     pmh->display();
+//     // }
+    
+//     // uint64_t vlu = 0;
+//     // for(int i = 0; i < 448; ++i){
+//     //     aa.key = qq[i];
+//     //     // aa.value = i * 12;
+//     //     pmh->remove(aa.key);   
+//     // }
+//     // pmh->display();
+//     // for(int i = 448; i < 448 + 4; ++i){
+//     //     aa.key = qq[i];
+//     //     pmh->remove(aa.key);
+//     //     pmh->display();
+//     // }
+//     pmh->selfDestory();
+//     // uint64_t new_vlu;
+//     // aaaa.key = 60;
+//     // aaaa.value = 60 * 2;
+//     // pmh->insert(aaaa); 
+//     // pmh->search(60, new_vlu); // cannot find dest
+//     // printf("key: %d, value: %ld\n",60, new_vlu);
+//     // pmh->~PmEHash();
+// }
+
+
+
+int main() 
 {
-    srand((unsigned)time(0));
-    PmEHash* pmh = new PmEHash;
-    int num = 512;
-    kv aaaa;
-    uint64_t qq[1000];
-    // uint64_t qq[32] = {1950, 1740, 1002, 1564, 604, 1030, 1897, 1528, 290, 1138,
-    //                     1560, 387, 346, 715, 1417, 90, 1036, 1905, 1078, 373,
-    //                     1747, 1034, 1503, 1154, 1282, 217, 685, 1163, 1266, 796,
-    //                     1313, 1486};
-    // qq[0] = 2;
-    for(int i = 0; i < num; ++i){
-        qq[i] = i;
+    string loadPath = "../workloads/220w-rw-50-50-load.txt";
+    string runPath = "../workloads/220w-rw-50-50-run.txt";
+    
+    vector<string> loadOperation;
+    vector<string> runOperation;
+    
+    string line;
+    
+    fstream load(loadPath);
+    // int onhun = 10000;
+    while (getline(load, line)) {
+        loadOperation.push_back(line);  
+        // --onhun;
+        // cout << line << endl;
     }
-    for(int i = num - 1; i >= 1; --i){
-        my_swap(qq[i],qq[rand()%i]);
+    load.close();
+    // onhun = 10;
+    fstream run(runPath);
+    while (getline(run, line)) {
+        runOperation.push_back(line);  
+		// --onhun;
     }
-    kv aa;
-    for(int i = 0; i < num; ++i){
-        // scanf("%ld", &aa.key);
-        // aa.key = (i + 1) * 4;
-        aa.key = qq[i]; 
-        // if(aa.key == 0) break;
-        aa.value = aa.key * 2;
-        printf("insert: %ld\t",aa.key);
-        pmh->insert(aa);
-        // if(i % 64 == 0){
-        //     pmh->display();
-        // }
-        pmh->display();
+    run.close();
+    clock_t loadStartTime, loadEndTime;
+    
+    loadStartTime = clock();
+	PmEHash* ehash = new PmEHash;
+    for (int i = 0; i < loadOperation.size(); i++) {
+    	string order = loadOperation[i];
+    	string operation = "";
+    	uint64_t key = 0;
+    	uint64_t value = 0;
+    	for (int j = 0; j < order.length();++j) {
+            // if(order[j] >= 'A' && order[j] <= 'Z'){
+            //     operation += order[j];
+            // }
+            key = 0;
+            value = 0;
+    	    while (order[j] >= 'A' && order[j] <= 'Z') {
+    	    	operation += order[j];
+    	    	j++;
+    	    }
+    	    j++;
+    	    for (int k = 0; k < 8; k++) {
+    	    	key = key * 10 + order[j] - '0';
+    	    	j++;
+    	    }
+    	    // cout << key << " ";
+    	    for (int k = 0; k < 8; k++) {
+    	    	value = value * 10 + order[j] - '0';
+    	    	j++;
+    	    }
+            j = order.length();
+            // cout << value << endl;
+    	}
+    	if (operation == "INSERT") {
+			kv temp;
+			temp.key = key;
+			temp.value = value;
+			ehash->insert(temp);
+            // ehash->display();
+    	}
     }
     
-    // uint64_t vlu = 0;
-    // for(int i = 0; i < 448; ++i){
-    //     aa.key = qq[i];
-    //     // aa.value = i * 12;
-    //     pmh->remove(aa.key);   
-    // }
-    // pmh->display();
-    // for(int i = 448; i < 448 + 4; ++i){
-    //     aa.key = qq[i];
-    //     pmh->remove(aa.key);
-    //     pmh->display();
-    // }
-    pmh->selfDestory();
-    // uint64_t new_vlu;
-    // aaaa.key = 60;
-    // aaaa.value = 60 * 2;
-    // pmh->insert(aaaa); 
-    // pmh->search(60, new_vlu); // cannot find dest
-    // printf("key: %d, value: %ld\n",60, new_vlu);
-    // pmh->~PmEHash();
+    loadEndTime = clock();
+    cout << "load total time : " << (double)(loadEndTime - loadStartTime) / CLOCKS_PER_SEC << "s" << endl;
+    cout << "load total operations : " << loadOperation.size() << endl;
+    cout << "load operations per second : " << loadOperation.size() * CLOCKS_PER_SEC / (double)(loadEndTime - loadStartTime) << endl;
+    // ehash->display();
+    clock_t runStartTime, runEndTime;
+    int INSERT = 0;
+    int UPDATE = 0;
+	int READ = 0;
+	int DELETE = 0;
+    runStartTime = clock();
+    for (int i = 0; i < runOperation.size(); i++) {
+    	string order = runOperation[i];
+    	string operation = "";
+    	uint64_t key = 0;
+    	uint64_t value = 0;
+    	for (int j = 0; j < order.length();) {
+            key = 0;
+            value = 0;
+    	    while (order[j] >= 'A' && order[j] <= 'Z') {
+    	    	operation += order[j];
+    	    	j++;
+    	    }
+    	    j++;
+    	    for (int k = 0; k < 8; k++) {
+    	    	key = key * 10 + order[j] - '0';
+    	    	j++;
+    	    }
+    	    
+    	    for (int k = 0; k < 8; k++) {
+    	    	value = value * 10 + order[j] - '0';
+    	    	j++;
+    	    }
+            j = order.length();
+    	}
+    	
+    	// PmEHash* ehash = new PmEHash;
+        kv temp;
+        temp.key = key;
+        temp.value = value;
+    	
+    	if (operation == "INSERT") {
+			ehash->insert(temp);
+            // ehash->display();
+			INSERT++;
+    	} else if (operation == "UPDATE") {
+			ehash->update(temp);
+            // ehash->display();
+			UPDATE++;
+    	} else if (operation == "READ"){
+    	    ehash->search(key, value);
+            // ehash->display();
+    	    READ++;
+    	} else if (operation == "DELETE"){
+    	    ehash->remove(key);
+            // ehash->display();
+    	    DELETE++;
+    	}
+    }
+    runEndTime = clock();  
+    cout << "run total Time : " <<(double)(runEndTime - runStartTime) / CLOCKS_PER_SEC << "s" << endl;
+    cout << "run total operations : " << runOperation.size() << endl;
+    cout << "run operations per second : " << runOperation.size() * CLOCKS_PER_SEC / (double)(runEndTime - runStartTime) << endl;
+    cout << "INSERT : " << INSERT << endl;
+    cout << "UPDATE : " << UPDATE << endl;
+    cout << "READ : " << READ << endl;
+    cout << "DELETE : " << DELETE << endl;
+    ehash->selfDestory();
 }
+

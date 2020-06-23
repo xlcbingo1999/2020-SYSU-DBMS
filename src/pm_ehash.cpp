@@ -89,9 +89,9 @@ int PmEHash::remove(uint64_t key)
         if ((catalog.buckets_virtual_address[bucketID]->bitmap[0] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == key) {
             catalog.buckets_virtual_address[bucketID]->bitmap[0] &= (~(1 << (7 - i)));
             page_pointer_table[fid]->page_bucket->bitmap[0] &= (~(1 << (7 - i)));
-            if (catalog.buckets_virtual_address[bucketID]->bitmap[0] == 0 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 0) {
-                mergeBucket(bucketID);
-            }
+            // if (catalog.buckets_virtual_address[bucketID]->bitmap[0] == 0 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 0) {
+            //     mergeBucket(bucketID);
+            // }
             return 0;
         }
         temp >>= 1;
@@ -101,9 +101,9 @@ int PmEHash::remove(uint64_t key)
         if ((catalog.buckets_virtual_address[bucketID]->bitmap[1] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == key) {
             catalog.buckets_virtual_address[bucketID]->bitmap[1] &= (~(1 << (15 - i)));
             page_pointer_table[fid]->page_bucket->bitmap[1] &= (~(1 << (15 - i)));
-            if (catalog.buckets_virtual_address[bucketID]->bitmap[0] == 0 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 0) {
-                mergeBucket(bucketID);
-            }
+            // if (catalog.buckets_virtual_address[bucketID]->bitmap[0] == 0 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 0) {
+            //     mergeBucket(bucketID);
+            // }
             return 0;
         }
         temp >>= 1;
@@ -278,7 +278,12 @@ void PmEHash::splitBucket(uint64_t bucket_id)
     new_bucket->local_depth = ori_bucket->local_depth;
     new_bucket->bitmap[0] = 0;
     new_bucket->bitmap[1] = 0;
-    catalog.buckets_virtual_address[to_bucket_id] = new_bucket;
+    uint64_t yu = to_bucket_id % (1 << ori_bucket->local_depth);
+    for(int i = 0; i < metadata->catalog_size; ++i){
+        if((i % (1 << ori_bucket->local_depth)) == yu){
+            catalog.buckets_virtual_address[i] = new_bucket;
+        }
+    }
     uint64_t to_insert_bucketid;
     kv* temp_kv;
     for (int i = 0; i < BUCKET_SLOT_NUM; ++i) {

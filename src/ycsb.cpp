@@ -2,7 +2,7 @@
 #include <fstream>
 #include <string>
 #include <vector>
-#include "pm_ehash.h"
+#include "data_page.h"
 #include "time.h"
 
 using namespace std;
@@ -11,8 +11,8 @@ using namespace std;
 
 int main() 
 {
-    string loadPath = "";
-    string runPath = "";
+    string loadPath = "../workloads/1w-rw-50-50-load.txt";
+    string runPath = "../workloads/1w-rw-50-50-run.txt";
     
     vector<string> loadOperation;
     vector<string> runOperation;
@@ -20,18 +20,22 @@ int main()
     string line;
     
     fstream load(loadPath);
-    while (getline(load, line)) {
+    int onhun = 100;
+    while (getline(load, line) && onhun > 0) {
         loadOperation.push_back(line);  
+        --onhun;
     }
-    
+    onhun = 100;
     fstream run(runPath);
-    while (getline(load, line)) {
+    while (getline(load, line) && onhun > 0) {
         loadOperation.push_back(line);  
+		--onhun;
     }
     
     clock_t loadStartTime, loadEndTime;
     
     loadStartTime = clock();
+	PmEHash* ehash = new PmEHash;
     for (int i = 0; i < loadOperation.size(); i++) {
     	string order = loadOperation[i];
     	string operation = "";
@@ -53,13 +57,11 @@ int main()
     	    	j++;
     	    }
     	}
-    	
     	if (operation == "INSERT") {
-    	    PmEHash* ehash = new PmEHash;
-	    kv temp;
-	    temp.key = key;
-	    temp.value = value;
-	    ehash->insert(temp);
+			kv temp;
+			temp.key = key;
+			temp.value = value;
+			ehash->insert(temp);
     	}
     }
     loadEndTime = clock();
@@ -95,21 +97,21 @@ int main()
     	    }
     	}
     	
-    	PmEHash* ehash = new PmEHash;
+    	// PmEHash* ehash = new PmEHash;
         kv temp;
         temp.key = key;
         temp.value = value;
     	
     	if (operation == "INSERT") {
-	    ehash->insert(temp);
-	    INSERT++;
+			ehash->insert(temp);
+			INSERT++;
     	} else if (operation == "UPDATE") {
-	    ehash->update(temp);
-	    UPDATE++;
+			ehash->update(temp);
+			UPDATE++;
     	} else if (operation == "READ"){
     	    ehash->search(key, value);
     	    READ++;
-    	} else {
+    	} else if (operation == "DELETE"){
     	    ehash->remove(key);
     	    DELETE++;
     	}
