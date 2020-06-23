@@ -5,11 +5,16 @@
  * @param NULL
  * @return: new instance of PmEHash
  */
+/**
+ * @description: construct a new instance of PmEHash in a default directory
+ * @param NULL
+ * @return: new instance of PmEHash
+ */
 PmEHash::PmEHash()
 {
     size_t map_len;
     int is_pmem;
-    metadata = (ehash_metadata*)pmem_map_file("/mnt/pmemdir/ehash_metadata", sizeof(ehash_metadata), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
+    metadata = (ehash_metadata*)pmem_map_file("/home/xlc/Desktop/2020-SYSU-DBMS/data/ehash_metadata", sizeof(ehash_metadata), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
     metadata->global_depth = 1;
     metadata->max_file_id = 0;
     metadata->catalog_size = 2;
@@ -27,7 +32,6 @@ PmEHash::PmEHash()
         catalog.buckets_virtual_address[i] = new_bucket;
     }
 }
-
 /**
  * @description: persist and munmap all data in NVM
  * @param NULL 
@@ -35,10 +39,10 @@ PmEHash::PmEHash()
  */
 PmEHash::~PmEHash()
 {
-    pmem_persist(metadata, sizeof(ehash_metadata));
+    // pmem_persist(metadata, sizeof(ehash_metadata));
     pmem_unmap(metadata, sizeof(ehash_metadata));
     for (int i = 0; i < metadata->max_file_id; ++i) {
-        pmem_persist(page_pointer_table[i], sizeof(data_page));
+        // pmem_persist(page_pointer_table[i], sizeof(data_page));
         pmem_unmap(page_pointer_table[i], sizeof(data_page));
     }
 }
@@ -89,7 +93,7 @@ int PmEHash::remove(uint64_t key)
         if ((catalog.buckets_virtual_address[bucketID]->bitmap[0] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == key) {
             catalog.buckets_virtual_address[bucketID]->bitmap[0] &= (~(1 << (7 - i)));
             page_pointer_table[fid]->page_bucket->bitmap[0] &= (~(1 << (7 - i)));
-            // if (catalog.buckets_virtual_address[bucketID]->bitmap[0] == 0 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 0) {
+            // if(catalog.buckets_virtual_address[bucketID]->bitmap[0] == 0 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 0){
             //     mergeBucket(bucketID);
             // }
             return 0;
@@ -101,7 +105,7 @@ int PmEHash::remove(uint64_t key)
         if ((catalog.buckets_virtual_address[bucketID]->bitmap[1] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == key) {
             catalog.buckets_virtual_address[bucketID]->bitmap[1] &= (~(1 << (15 - i)));
             page_pointer_table[fid]->page_bucket->bitmap[1] &= (~(1 << (15 - i)));
-            // if (catalog.buckets_virtual_address[bucketID]->bitmap[0] == 0 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 0) {
+            // if(catalog.buckets_virtual_address[bucketID]->bitmap[0] == 0 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 0){
             //     mergeBucket(bucketID);
             // }
             return 0;
@@ -110,7 +114,6 @@ int PmEHash::remove(uint64_t key)
     }
     return -1;
 }
-
 /**
  * @description: 更新现存的键值对的值
  * @param kv: 更新的键值对，有原键和新值
@@ -148,7 +151,6 @@ int PmEHash::update(kv kv_pair)
     }
     return -1;
 }
-
 /**
  * @description: 查找目标键值对数据，将返回值放在参数里的引用类型进行返回
  * @param uint64_t: 查询的目标键
@@ -183,6 +185,47 @@ int PmEHash::search(uint64_t key, uint64_t& return_val)
         temp >>= 1;
     }
     return -1;
+}
+
+/**
+ * @description: 用于display
+ * @param: NULL
+ * @return: NULL
+ */
+void PmEHash::display()
+{
+    std::set<uint64_t> toprint;
+    printf("metadata->global_depth:%ld\n", metadata->global_depth);
+    for (int i = 0; i < metadata->catalog_size; ++i) {
+        printf("bucket %02d ", i);
+        printf("local_depth %ld ", catalog.buckets_virtual_address[i]->local_depth);
+        printf("{%02x%02x}", catalog.buckets_virtual_address[i]->bitmap[0], catalog.buckets_virtual_address[i]->bitmap[1]);
+        printf("(0x%p)", catalog.buckets_virtual_address[i]);
+        uint8_t temp = 128;
+        for (int j = 0; j < 8; ++j) {
+            if ((catalog.buckets_virtual_address[i]->bitmap[0] & temp) != 0) {
+                printf("[%03ld] ", catalog.buckets_virtual_address[i]->slot[j].key);
+
+                toprint.insert(catalog.buckets_virtual_address[i]->slot[j].key);
+            }
+            temp >>= 1;
+        }
+        temp = 128;
+        for (int j = 8; j < 15; ++j) {
+            if ((catalog.buckets_virtual_address[i]->bitmap[1] & temp) != 0) {
+                printf("[%03ld] ", catalog.buckets_virtual_address[i]->slot[j].key);
+                toprint.insert(catalog.buckets_virtual_address[i]->slot[j].key);
+            }
+            temp >>= 1;
+        }
+        printf("\n");
+    }
+    // std::set<uint64_t>::iterator iter;
+    printf("size: %ld\n", toprint.size());
+    // for(iter = toprint.begin(); iter != toprint.end(); ++iter){
+    //     printf("%ld ", *iter);
+    // }
+    // printf("\n");
 }
 
 /**
@@ -279,8 +322,8 @@ void PmEHash::splitBucket(uint64_t bucket_id)
     new_bucket->bitmap[0] = 0;
     new_bucket->bitmap[1] = 0;
     uint64_t yu = to_bucket_id % (1 << ori_bucket->local_depth);
-    for(int i = 0; i < metadata->catalog_size; ++i){
-        if((i % (1 << ori_bucket->local_depth)) == yu){
+    for (int i = 0; i < metadata->catalog_size; ++i) {
+        if ((i % (1 << ori_bucket->local_depth)) == yu) {
             catalog.buckets_virtual_address[i] = new_bucket;
         }
     }
@@ -340,17 +383,17 @@ void PmEHash::mergeBucket(uint64_t bucket_id)
     if (i == metadata->catalog_size && i > 2) {
         uint64_t ori_cata_size = metadata->catalog_size;
         ehash_catalog temp_catalog;
-        temp_catalog.buckets_pm_address = new pm_address[ori_cata_size/2];
-        temp_catalog.buckets_virtual_address = new pm_bucket*[ori_cata_size/2];
-        for (int i = 0; i < ori_cata_size/2; ++i) {
-            temp_catalog.buckets_pm_address[i] = catalog.buckets_pm_address[i];
-            temp_catalog.buckets_virtual_address[i] = catalog.buckets_virtual_address[i];
+        temp_catalog.buckets_pm_address = new pm_address[ori_cata_size / 2];
+        temp_catalog.buckets_virtual_address = new pm_bucket*[ori_cata_size / 2];
+        for (int j = 0; j < ori_cata_size / 2; ++j) {
+            temp_catalog.buckets_pm_address[j] = catalog.buckets_pm_address[j];
+            temp_catalog.buckets_virtual_address[j] = catalog.buckets_virtual_address[j];
         }
-        catalog.buckets_pm_address = new pm_address[ori_cata_size/2];
-        catalog.buckets_virtual_address = new pm_bucket*[ori_cata_size/2];
-        for (int i = 0; i < ori_cata_size/2; ++i) {
-            catalog.buckets_pm_address[i] = temp_catalog.buckets_pm_address[i];
-            catalog.buckets_virtual_address[i] = temp_catalog.buckets_virtual_address[i];
+        catalog.buckets_pm_address = new pm_address[ori_cata_size / 2];
+        catalog.buckets_virtual_address = new pm_bucket*[ori_cata_size / 2];
+        for (int j = 0; j < ori_cata_size / 2; ++j) {
+            catalog.buckets_pm_address[j] = temp_catalog.buckets_pm_address[j];
+            catalog.buckets_virtual_address[j] = temp_catalog.buckets_virtual_address[j];
         }
         metadata->catalog_size = ori_cata_size / 2;
         metadata->global_depth -= 1;
@@ -409,7 +452,7 @@ void* PmEHash::getFreeSlot(pm_address& new_address)
  */
 void PmEHash::allocNewPage()
 {
-    std::string file_name = "/mnt/pmemdir/file_name";
+    std::string file_name = "/home/xlc/Desktop/2020-SYSU-DBMS/data/file_name";
     uint64_t name_id = metadata->max_file_id;
     std::string name_id_str = std::to_string(name_id);
     file_name += name_id_str;
@@ -418,7 +461,7 @@ void PmEHash::allocNewPage()
     int is_pmem;
     data_page* new_page = (data_page*)pmem_map_file(file_name_c, sizeof(data_page), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
     new_page->bitmap = 0;
-    for (int i = 0; i < 14; ++i) {
+    for (int i = 0; i < 13; ++i) {
         new_page->unused_byte_in_data_page[i] = 0;
     }
     data_page* temp_page_table[name_id];
@@ -477,15 +520,16 @@ void PmEHash::mapAllPage()
  */
 void PmEHash::selfDestory()
 {
-    std::string file_name = "/mnt/pmemdir/file_name";
+    std::string file_name = "/home/xlc/Desktop/2020-SYSU-DBMS/data/file_name";
     uint64_t name_id = metadata->max_file_id;
     for (uint64_t i = 0; i < name_id; ++i) {
+        file_name = "/home/xlc/Desktop/2020-SYSU-DBMS/data/file_name";
         std::string name_id_str = std::to_string(i);
         file_name += name_id_str;
         const char* file_name_c = file_name.c_str();
         std::remove(file_name_c);
     }
-    std::remove("/mnt/pmemdir/ehash_metadata");
+    std::remove("/home/xlc/Desktop/2020-SYSU-DBMS/data/ehash_metadata");
     for (uint64_t i = 0; i < name_id; ++i) {
         page_pointer_table[i] = NULL;
     }
@@ -511,9 +555,3 @@ void PmEHash::selfDestory()
     metadata->max_file_id = 0;
     metadata->catalog_size = 0;
 }
-
-// void my_swap(uint64_t& a,uint64_t& b){
-//     uint64_t temp = a;
-//     a = b;
-//     b = temp;
-// }

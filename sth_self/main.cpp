@@ -1,31 +1,30 @@
 
 #include <cstdint>
+#include <fstream>
+#include <iostream>
 #include <libpmem.h>
 #include <map>
 #include <queue>
+#include <set>
 #include <stdio.h>
 #include <string>
 #include <time.h>
-#include <set>
 #include <unistd.h>
 #include <vector>
-#include <fstream>
-#include <iostream>
-
 
 #define BUCKET_SLOT_NUM 15
 #define DEFAULT_CATALOG_SIZE 16
 #define META_NAME "pm_ehash_metadata";
 #define CATALOG_NAME "pm_ehash_catalog";
 #define PM_EHASH_DIRECTORY ""; // add your own directory path to store the pm_ehash
-#define CLOCKS_PER_SEC ((__clock_t)1000)
-using std::map;
-using std::queue;
-using std::fstream;
-using std::vector;
-using std::string;
+// #define CLOCKS_PER_SEC ((__clock_t)1000)
 using std::cout;
 using std::endl;
+using std::fstream;
+using std::map;
+using std::queue;
+using std::string;
+using std::vector;
 #define DATA_PAGE_SLOT_NUM 16
 
 // use pm_address to locate the data in the page
@@ -47,7 +46,7 @@ typedef struct page_inner_bucket {
 typedef struct data_page {
     // fixed-size record design
     // uncompressed page format
-    uint16_t bitmap; 
+    uint16_t bitmap;
     page_inner_bucket page_bucket[DATA_PAGE_SLOT_NUM];
     uint8_t unused_byte_in_data_page[14];
 } data_page;
@@ -60,7 +59,8 @@ offset: data offset in the file
 typedef struct pm_address {
     uint32_t fileId;
     uint32_t offset;
-    bool operator < (const pm_address &o) const {
+    bool operator<(const pm_address& o) const
+    {
         return (fileId < o.fileId) || (fileId == o.fileId && offset < o.offset);
     }
 } pm_address;
@@ -99,7 +99,6 @@ typedef struct ehash_metadata {
 class PmEHash {
 private:
     data_page** page_pointer_table;
-    
 
     ehash_metadata* metadata; // virtual address of metadata, mapping the metadata file
     ehash_catalog catalog; // the catalog of hash
@@ -171,10 +170,10 @@ PmEHash::PmEHash()
  */
 PmEHash::~PmEHash()
 {
-    pmem_persist(metadata, sizeof(ehash_metadata));
+    // pmem_persist(metadata, sizeof(ehash_metadata));
     pmem_unmap(metadata, sizeof(ehash_metadata));
     for (int i = 0; i < metadata->max_file_id; ++i) {
-        pmem_persist(page_pointer_table[i], sizeof(data_page));
+        // pmem_persist(page_pointer_table[i], sizeof(data_page));
         pmem_unmap(page_pointer_table[i], sizeof(data_page));
     }
 }
@@ -215,13 +214,14 @@ int PmEHash::insert(kv new_kv_pair)
 int PmEHash::remove(uint64_t key)
 {
     uint64_t returnSearchValue;
-    if (search(key, returnSearchValue) == -1) return -1;
+    if (search(key, returnSearchValue) == -1)
+        return -1;
     uint64_t bucketID = hashFunc(key);
     uint8_t temp = 128;
     uint32_t fid = vAddr2pmAddr.find(catalog.buckets_virtual_address[bucketID])->second.fileId;
-    
-    for(int i = 0; i < 8; ++i){
-        if((catalog.buckets_virtual_address[bucketID]->bitmap[0] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == key){
+
+    for (int i = 0; i < 8; ++i) {
+        if ((catalog.buckets_virtual_address[bucketID]->bitmap[0] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == key) {
             catalog.buckets_virtual_address[bucketID]->bitmap[0] &= (~(1 << (7 - i)));
             page_pointer_table[fid]->page_bucket->bitmap[0] &= (~(1 << (7 - i)));
             // if(catalog.buckets_virtual_address[bucketID]->bitmap[0] == 0 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 0){
@@ -232,8 +232,8 @@ int PmEHash::remove(uint64_t key)
         temp >>= 1;
     }
     temp = 128;
-    for(int i = 8; i < 15; ++i){
-        if((catalog.buckets_virtual_address[bucketID]->bitmap[1] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == key){
+    for (int i = 8; i < 15; ++i) {
+        if ((catalog.buckets_virtual_address[bucketID]->bitmap[1] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == key) {
             catalog.buckets_virtual_address[bucketID]->bitmap[1] &= (~(1 << (15 - i)));
             page_pointer_table[fid]->page_bucket->bitmap[1] &= (~(1 << (15 - i)));
             // if(catalog.buckets_virtual_address[bucketID]->bitmap[0] == 0 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 0){
@@ -253,7 +253,8 @@ int PmEHash::remove(uint64_t key)
 int PmEHash::update(kv kv_pair)
 {
     uint64_t returnSearchValue;
-    if (search(kv_pair.key, returnSearchValue) == -1) return -1;
+    if (search(kv_pair.key, returnSearchValue) == -1)
+        return -1;
     uint64_t bucketID = hashFunc(kv_pair.key);
     uint8_t bit_map[2];
     bit_map[0] = catalog.buckets_virtual_address[bucketID]->bitmap[0];
@@ -262,8 +263,8 @@ int PmEHash::update(kv kv_pair)
     uint32_t off = vAddr2pmAddr.find(catalog.buckets_virtual_address[bucketID])->second.offset;
     uint32_t index = (off - 2) / 255;
     uint8_t temp = 128;
-    for(int i = 0; i < 8; ++i){
-        if((bit_map[0] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == kv_pair.key){
+    for (int i = 0; i < 8; ++i) {
+        if ((bit_map[0] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == kv_pair.key) {
             catalog.buckets_virtual_address[bucketID]->slot[i].value = kv_pair.value;
             page_pointer_table[fid]->page_bucket->inner_kv[index].value = kv_pair.value;
             return 0;
@@ -271,8 +272,8 @@ int PmEHash::update(kv kv_pair)
         temp >>= 1;
     }
     temp = 128;
-    for(int i = 8; i < 15; ++i){
-        if((bit_map[1] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == kv_pair.key){
+    for (int i = 8; i < 15; ++i) {
+        if ((bit_map[1] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == kv_pair.key) {
             catalog.buckets_virtual_address[bucketID]->slot[i].value = kv_pair.value;
             page_pointer_table[fid]->page_bucket->inner_kv[index].value = kv_pair.value;
             return 0;
@@ -317,8 +318,6 @@ int PmEHash::search(uint64_t key, uint64_t& return_val)
     return -1;
 }
 
-
-
 /**
  * @description: 用于display
  * @param: NULL
@@ -327,24 +326,24 @@ int PmEHash::search(uint64_t key, uint64_t& return_val)
 void PmEHash::display()
 {
     std::set<uint64_t> toprint;
-    printf("metadata->global_depth:%ld\n",metadata->global_depth);
-    for(int i = 0; i < metadata->catalog_size; ++i){
-        printf("bucket %02d ",i);
+    printf("metadata->global_depth:%ld\n", metadata->global_depth);
+    for (int i = 0; i < metadata->catalog_size; ++i) {
+        printf("bucket %02d ", i);
         printf("local_depth %ld ", catalog.buckets_virtual_address[i]->local_depth);
-        printf("{%02x%02x}",catalog.buckets_virtual_address[i]->bitmap[0],catalog.buckets_virtual_address[i]->bitmap[1]);
-        printf("(0x%p)",catalog.buckets_virtual_address[i]);
+        printf("{%02x%02x}", catalog.buckets_virtual_address[i]->bitmap[0], catalog.buckets_virtual_address[i]->bitmap[1]);
+        printf("(0x%p)", catalog.buckets_virtual_address[i]);
         uint8_t temp = 128;
-        for(int j = 0; j < 8; ++j){
-            if((catalog.buckets_virtual_address[i]->bitmap[0] & temp) != 0){
+        for (int j = 0; j < 8; ++j) {
+            if ((catalog.buckets_virtual_address[i]->bitmap[0] & temp) != 0) {
                 printf("[%03ld] ", catalog.buckets_virtual_address[i]->slot[j].key);
-                
+
                 toprint.insert(catalog.buckets_virtual_address[i]->slot[j].key);
             }
             temp >>= 1;
         }
         temp = 128;
-        for(int j = 8; j < 15; ++j){
-            if((catalog.buckets_virtual_address[i]->bitmap[1] & temp) != 0){
+        for (int j = 8; j < 15; ++j) {
+            if ((catalog.buckets_virtual_address[i]->bitmap[1] & temp) != 0) {
                 printf("[%03ld] ", catalog.buckets_virtual_address[i]->slot[j].key);
                 toprint.insert(catalog.buckets_virtual_address[i]->slot[j].key);
             }
@@ -352,12 +351,12 @@ void PmEHash::display()
         }
         printf("\n");
     }
-    std::set<uint64_t>::iterator iter;
-    printf("size: %ld\n",toprint.size());
-    for(iter = toprint.begin(); iter != toprint.end(); ++iter){
-        printf("%ld ", *iter);
-    }
-    printf("\n");
+    // std::set<uint64_t>::iterator iter;
+    printf("size: %ld\n", toprint.size());
+    // for(iter = toprint.begin(); iter != toprint.end(); ++iter){
+    //     printf("%ld ", *iter);
+    // }
+    // printf("\n");
 }
 
 /**
@@ -454,8 +453,8 @@ void PmEHash::splitBucket(uint64_t bucket_id)
     new_bucket->bitmap[0] = 0;
     new_bucket->bitmap[1] = 0;
     uint64_t yu = to_bucket_id % (1 << ori_bucket->local_depth);
-    for(int i = 0; i < metadata->catalog_size; ++i){
-        if((i % (1 << ori_bucket->local_depth)) == yu){
+    for (int i = 0; i < metadata->catalog_size; ++i) {
+        if ((i % (1 << ori_bucket->local_depth)) == yu) {
             catalog.buckets_virtual_address[i] = new_bucket;
         }
     }
@@ -515,15 +514,15 @@ void PmEHash::mergeBucket(uint64_t bucket_id)
     if (i == metadata->catalog_size && i > 2) {
         uint64_t ori_cata_size = metadata->catalog_size;
         ehash_catalog temp_catalog;
-        temp_catalog.buckets_pm_address = new pm_address[ori_cata_size/2];
-        temp_catalog.buckets_virtual_address = new pm_bucket*[ori_cata_size/2];
-        for (int j = 0; j < ori_cata_size/2; ++j) {
+        temp_catalog.buckets_pm_address = new pm_address[ori_cata_size / 2];
+        temp_catalog.buckets_virtual_address = new pm_bucket*[ori_cata_size / 2];
+        for (int j = 0; j < ori_cata_size / 2; ++j) {
             temp_catalog.buckets_pm_address[j] = catalog.buckets_pm_address[j];
             temp_catalog.buckets_virtual_address[j] = catalog.buckets_virtual_address[j];
         }
-        catalog.buckets_pm_address = new pm_address[ori_cata_size/2];
-        catalog.buckets_virtual_address = new pm_bucket*[ori_cata_size/2];
-        for (int j = 0; j < ori_cata_size/2; ++j) {
+        catalog.buckets_pm_address = new pm_address[ori_cata_size / 2];
+        catalog.buckets_virtual_address = new pm_bucket*[ori_cata_size / 2];
+        for (int j = 0; j < ori_cata_size / 2; ++j) {
             catalog.buckets_pm_address[j] = temp_catalog.buckets_pm_address[j];
             catalog.buckets_virtual_address[j] = temp_catalog.buckets_virtual_address[j];
         }
@@ -591,7 +590,7 @@ void PmEHash::allocNewPage()
     const char* file_name_c = file_name.c_str();
     size_t map_len;
     int is_pmem;
-    data_page* new_page = (data_page*)pmem_map_file(file_name_c,sizeof(data_page),PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
+    data_page* new_page = (data_page*)pmem_map_file(file_name_c, sizeof(data_page), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
     new_page->bitmap = 0;
     for (int i = 0; i < 14; ++i) {
         new_page->unused_byte_in_data_page[i] = 0;
@@ -608,7 +607,7 @@ void PmEHash::allocNewPage()
     struct pm_bucket** new_bucket = new pm_bucket*[16];
     for (int j = 0; j < 16; ++j) {
         new_bucket[j] = new pm_bucket;
-        
+
         new_bucket[j]->bitmap[0] = 0;
         new_bucket[j]->bitmap[1] = 0;
         for (int i = 0; i < BUCKET_SLOT_NUM; ++i) {
@@ -634,7 +633,6 @@ void PmEHash::allocNewPage()
  */
 void PmEHash::recover()
 {
-    
 }
 
 /**
@@ -644,7 +642,6 @@ void PmEHash::recover()
  */
 void PmEHash::mapAllPage()
 {
-
 }
 
 /**
@@ -656,23 +653,24 @@ void PmEHash::selfDestory()
 {
     std::string file_name = "/mnt/pmemdir/file_name";
     uint64_t name_id = metadata->max_file_id;
-    for(uint64_t i = 0; i < name_id; ++i){
+    for (uint64_t i = 0; i < name_id; ++i) {
+        file_name = "/mnt/pmemdir/file_name";
         std::string name_id_str = std::to_string(i);
         file_name += name_id_str;
         const char* file_name_c = file_name.c_str();
         std::remove(file_name_c);
     }
     std::remove("/mnt/pmemdir/ehash_metadata");
-    for(uint64_t i = 0; i < name_id; ++i){
+    for (uint64_t i = 0; i < name_id; ++i) {
         page_pointer_table[i] = NULL;
     }
-    for(int i = 0; i < metadata->catalog_size; ++i){
+    for (int i = 0; i < metadata->catalog_size; ++i) {
         catalog.buckets_pm_address[i].fileId = 0;
         catalog.buckets_pm_address[i].offset = 0;
         catalog.buckets_virtual_address[i]->bitmap[0] = 0;
         catalog.buckets_virtual_address[i]->bitmap[1] = 0;
         catalog.buckets_virtual_address[i]->local_depth = 0;
-        for(int j = 0; j < BUCKET_SLOT_NUM; ++j){
+        for (int j = 0; j < BUCKET_SLOT_NUM; ++j) {
             catalog.buckets_virtual_address[i]->slot[j].key = 0;
             catalog.buckets_virtual_address[i]->slot[j].value = 0;
         }
@@ -681,7 +679,7 @@ void PmEHash::selfDestory()
     vAddr2pmAddr.clear();
     pmAddr2vAddr.clear();
     int siz = free_list.size();
-    for(int i = 0; i < siz; ++i){
+    for (int i = 0; i < siz; ++i) {
         free_list.pop();
     }
     metadata->global_depth = 0;
@@ -689,7 +687,8 @@ void PmEHash::selfDestory()
     metadata->catalog_size = 0;
 }
 
-void my_swap(uint64_t& a,uint64_t& b){
+void my_swap(uint64_t& a, uint64_t& b)
+{
     uint64_t temp = a;
     a = b;
     b = temp;
@@ -718,7 +717,7 @@ void my_swap(uint64_t& a,uint64_t& b){
 //     for(int i = 0; i < num; ++i){
 //         // scanf("%ld", &aa.key);
 //         // aa.key = (i + 1) * 4;
-//         aa.key = qq[i]; 
+//         aa.key = qq[i];
 //         // if(aa.key == 0) break;
 //         aa.value = aa.key * 2;
 //         printf("insert: %ld\t",aa.key);
@@ -739,7 +738,7 @@ void my_swap(uint64_t& a,uint64_t& b){
 //     // for(int i = 28; i < num/4; ++i){
 //     //     // scanf("%ld", &aa.key);
 //     //     // aa.key = (i + 1) * 4;
-//     //     aa.key = qq[i]; 
+//     //     aa.key = qq[i];
 //     //     // if(aa.key == 0) break;
 //     //     aa.value = aa.key * 2;
 //     //     printf("insert: %ld\t",aa.key);
@@ -749,12 +748,12 @@ void my_swap(uint64_t& a,uint64_t& b){
 //     //     // }
 //     //     pmh->display();
 //     // }
-    
+
 //     // uint64_t vlu = 0;
 //     // for(int i = 0; i < 448; ++i){
 //     //     aa.key = qq[i];
 //     //     // aa.value = i * 12;
-//     //     pmh->remove(aa.key);   
+//     //     pmh->remove(aa.key);
 //     // }
 //     // pmh->display();
 //     // for(int i = 448; i < 448 + 4; ++i){
@@ -766,147 +765,158 @@ void my_swap(uint64_t& a,uint64_t& b){
 //     // uint64_t new_vlu;
 //     // aaaa.key = 60;
 //     // aaaa.value = 60 * 2;
-//     // pmh->insert(aaaa); 
+//     // pmh->insert(aaaa);
 //     // pmh->search(60, new_vlu); // cannot find dest
 //     // printf("key: %d, value: %ld\n",60, new_vlu);
 //     // pmh->~PmEHash();
 // }
 
-
-
-int main() 
+int main()
 {
-    string loadPath = "../workloads/220w-rw-50-50-load.txt";
-    string runPath = "../workloads/220w-rw-50-50-run.txt";
-    
+    string loadPath[7];
+    loadPath[0] = "../workloads/1w-rw-50-50-load.txt";
+    loadPath[1] = "../workloads/10w-rw-0-100-load.txt";
+    loadPath[2] = "../workloads/10w-rw-25-75-load.txt";
+    loadPath[3] = "../workloads/10w-rw-50-50-load.txt";
+    loadPath[4] = "../workloads/10w-rw-75-25-load.txt";
+    loadPath[5] = "../workloads/10w-rw-100-0-load.txt";
+    loadPath[6] = "../workloads/220w-rw-50-50-load.txt";
+    string runPath[7];
+    runPath[0] = "../workloads/1w-rw-50-50-run.txt";
+    runPath[1] = "../workloads/10w-rw-0-100-run.txt";
+    runPath[2] = "../workloads/10w-rw-25-75-run.txt";
+    runPath[3] = "../workloads/10w-rw-50-50-run.txt";
+    runPath[4] = "../workloads/10w-rw-75-25-run.txt";
+    runPath[5] = "../workloads/10w-rw-100-0-run.txt";
+    runPath[6] = "../workloads/220w-rw-50-50-run.txt";
+
     vector<string> loadOperation;
     vector<string> runOperation;
-    
-    string line;
-    
-    fstream load(loadPath);
-    // int onhun = 10000;
-    while (getline(load, line)) {
-        loadOperation.push_back(line);  
-        // --onhun;
-        // cout << line << endl;
-    }
-    load.close();
-    // onhun = 10;
-    fstream run(runPath);
-    while (getline(run, line)) {
-        runOperation.push_back(line);  
-		// --onhun;
-    }
-    run.close();
-    clock_t loadStartTime, loadEndTime;
-    
-    loadStartTime = clock();
-	PmEHash* ehash = new PmEHash;
-    for (int i = 0; i < loadOperation.size(); i++) {
-    	string order = loadOperation[i];
-    	string operation = "";
-    	uint64_t key = 0;
-    	uint64_t value = 0;
-    	for (int j = 0; j < order.length();++j) {
-            // if(order[j] >= 'A' && order[j] <= 'Z'){
-            //     operation += order[j];
-            // }
-            key = 0;
-            value = 0;
-    	    while (order[j] >= 'A' && order[j] <= 'Z') {
-    	    	operation += order[j];
-    	    	j++;
-    	    }
-    	    j++;
-    	    for (int k = 0; k < 8; k++) {
-    	    	key = key * 10 + order[j] - '0';
-    	    	j++;
-    	    }
-    	    // cout << key << " ";
-    	    for (int k = 0; k < 8; k++) {
-    	    	value = value * 10 + order[j] - '0';
-    	    	j++;
-    	    }
-            j = order.length();
-            // cout << value << endl;
-    	}
-    	if (operation == "INSERT") {
-			kv temp;
-			temp.key = key;
-			temp.value = value;
-			ehash->insert(temp);
-            // ehash->display();
-    	}
-    }
-    
-    loadEndTime = clock();
-    cout << "load total time : " << (double)(loadEndTime - loadStartTime) / CLOCKS_PER_SEC << "s" << endl;
-    cout << "load total operations : " << loadOperation.size() << endl;
-    cout << "load operations per second : " << loadOperation.size() * CLOCKS_PER_SEC / (double)(loadEndTime - loadStartTime) << endl;
-    // ehash->display();
-    clock_t runStartTime, runEndTime;
-    int INSERT = 0;
-    int UPDATE = 0;
-	int READ = 0;
-	int DELETE = 0;
-    runStartTime = clock();
-    for (int i = 0; i < runOperation.size(); i++) {
-    	string order = runOperation[i];
-    	string operation = "";
-    	uint64_t key = 0;
-    	uint64_t value = 0;
-    	for (int j = 0; j < order.length();) {
-            key = 0;
-            value = 0;
-    	    while (order[j] >= 'A' && order[j] <= 'Z') {
-    	    	operation += order[j];
-    	    	j++;
-    	    }
-    	    j++;
-    	    for (int k = 0; k < 8; k++) {
-    	    	key = key * 10 + order[j] - '0';
-    	    	j++;
-    	    }
-    	    
-    	    for (int k = 0; k < 8; k++) {
-    	    	value = value * 10 + order[j] - '0';
-    	    	j++;
-    	    }
-            j = order.length();
-    	}
-    	
-    	// PmEHash* ehash = new PmEHash;
-        kv temp;
-        temp.key = key;
-        temp.value = value;
-    	
-    	if (operation == "INSERT") {
-			ehash->insert(temp);
-            // ehash->display();
-			INSERT++;
-    	} else if (operation == "UPDATE") {
-			ehash->update(temp);
-            // ehash->display();
-			UPDATE++;
-    	} else if (operation == "READ"){
-    	    ehash->search(key, value);
-            // ehash->display();
-    	    READ++;
-    	} else if (operation == "DELETE"){
-    	    ehash->remove(key);
-            // ehash->display();
-    	    DELETE++;
-    	}
-    }
-    runEndTime = clock();  
-    cout << "run total Time : " <<(double)(runEndTime - runStartTime) / CLOCKS_PER_SEC << "s" << endl;
-    cout << "run total operations : " << runOperation.size() << endl;
-    cout << "run operations per second : " << runOperation.size() * CLOCKS_PER_SEC / (double)(runEndTime - runStartTime) << endl;
-    cout << "INSERT : " << INSERT << endl;
-    cout << "UPDATE : " << UPDATE << endl;
-    cout << "READ : " << READ << endl;
-    cout << "DELETE : " << DELETE << endl;
-    ehash->selfDestory();
-}
 
+    string line;
+    for (int file_index = 0; file_index < 7; ++file_index) {
+        loadOperation.clear();
+        runOperation.clear();
+        fstream load(loadPath[file_index]);
+        while (getline(load, line)) {
+            loadOperation.push_back(line);
+        }
+        load.close();
+        fstream run(runPath[file_index]);
+        while (getline(run, line)) {
+            runOperation.push_back(line);
+        }
+        run.close();
+        clock_t loadStartTime, loadEndTime;
+
+        loadStartTime = clock();
+        PmEHash* ehash = new PmEHash;
+        for (int i = 0; i < loadOperation.size(); i++) {
+            string order = loadOperation[i];
+            string operation = "";
+            uint64_t key = 0;
+            uint64_t value = 0;
+            for (int j = 0; j < order.length();) {
+                while (order[j] >= 'A' && order[j] <= 'Z') {
+                    operation += order[j];
+                    j++;
+                }
+                j++;
+                for (int k = 0; k < 8; k++) {
+                    key = key * 10 + order[j] - '0';
+                    j++;
+                }
+                for (int k = 0; k < 8; k++) {
+                    value = value * 10 + order[j] - '0';
+                    j++;
+                }
+                j = order.length();
+            }
+            if (operation == "INSERT") {
+                kv temp;
+                temp.key = key;
+                temp.value = value;
+                ehash->insert(temp);
+            }
+        }
+
+        loadEndTime = clock();
+        cout << "********************************" << loadPath[file_index] << "*******************************\n";
+        cout << "load total time : " << (double)(loadEndTime - loadStartTime) / CLOCKS_PER_SEC << "s" << endl;
+        cout << "load total operations : " << loadOperation.size() << endl;
+        cout << "load operations per second : " << loadOperation.size() * CLOCKS_PER_SEC / (double)(loadEndTime - loadStartTime) << endl;
+        
+        clock_t runStartTime, runEndTime;
+        int INSERT = 0;
+        int UPDATE = 0;
+        int READ = 0;
+        int DELETE = 0;
+        int INSERT_SUCCESS = 0;
+        int UPDATE_SUCCESS = 0;
+        int READ_SUCCESS = 0;
+        int DELETE_SUCCESS = 0;
+        runStartTime = clock();
+        for (int i = 0; i < runOperation.size(); i++) {
+            string order = runOperation[i];
+            string operation = "";
+            uint64_t key = 0;
+            uint64_t value = 0;
+            for (int j = 0; j < order.length();) {
+                while (order[j] >= 'A' && order[j] <= 'Z') {
+                    operation += order[j];
+                    j++;
+                }
+                j++;
+                for (int k = 0; k < 8; k++) {
+                    key = key * 10 + order[j] - '0';
+                    j++;
+                }
+
+                for (int k = 0; k < 8; k++) {
+                    value = value * 10 + order[j] - '0';
+                    j++;
+                }
+                j = order.length();
+            }
+
+            // PmEHash* ehash = new PmEHash;
+            kv temp;
+            temp.key = key;
+            temp.value = value;
+
+            if (operation == "INSERT") {
+                if (ehash->insert(temp) == 0) {
+                    INSERT_SUCCESS++;
+                }
+                INSERT++;
+            } else if (operation == "UPDATE") {
+                if (ehash->update(temp) == 0) {
+                    UPDATE_SUCCESS++;
+                }
+                UPDATE++;
+            } else if (operation == "READ") {
+                if (ehash->search(key, value) == 0) {
+                    READ_SUCCESS++;
+                }
+                READ++;
+            } else if (operation == "DELETE") {
+                if (ehash->remove(key) == 0) {
+                    DELETE_SUCCESS++;
+                }
+                DELETE++;
+            }
+        }
+
+        runEndTime = clock();
+        
+        cout << "run total Time : " << (double)(runEndTime - runStartTime) / CLOCKS_PER_SEC << "s" << endl;
+        cout << "run total operations : " << runOperation.size() << endl;
+        cout << "run operations per second : " << runOperation.size() * CLOCKS_PER_SEC / (double)(runEndTime - runStartTime) << endl;
+        cout << "INSERT : " << INSERT << " INSERT_SUCCESS : " << INSERT_SUCCESS << endl;
+        cout << "UPDATE : " << UPDATE << " UPDATE_SUCCESS : " << UPDATE_SUCCESS << endl;
+        cout << "READ : " << READ << " READ_SUCCESS : " << READ_SUCCESS << endl;
+        cout << "DELETE : " << DELETE << " DELETE_SUCCESS  : " << DELETE_SUCCESS << endl;
+        cout << "********************************" << runPath[file_index] << "*******************************\n";
+        ehash->selfDestory();
+    }
+}

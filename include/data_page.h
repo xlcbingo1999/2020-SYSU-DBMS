@@ -1,5 +1,6 @@
 #ifndef DATA_PAGE
 #define DATA_PAGE
+#include <cstdint>
 #include <libpmem.h>
 #define DATA_PAGE_SLOT_NUM 16
 
