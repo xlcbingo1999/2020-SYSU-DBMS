@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string>
 #include <time.h>
+#include <set>
 #include <unistd.h>
 
 #define BUCKET_SLOT_NUM 15
@@ -316,27 +317,38 @@ int PmEHash::search(uint64_t key, uint64_t& return_val)
  */
 void PmEHash::display()
 {
+    std::set<uint64_t> toprint;
     printf("metadata->global_depth:%ld\n",metadata->global_depth);
     for(int i = 0; i < metadata->catalog_size; ++i){
         printf("bucket %02d ",i);
         printf("local_depth %ld ", catalog.buckets_virtual_address[i]->local_depth);
         printf("{%02x%02x}",catalog.buckets_virtual_address[i]->bitmap[0],catalog.buckets_virtual_address[i]->bitmap[1]);
+        printf("(0x%p)",catalog.buckets_virtual_address[i]);
         uint8_t temp = 128;
         for(int j = 0; j < 8; ++j){
             if((catalog.buckets_virtual_address[i]->bitmap[0] & temp) != 0){
-                printf("[%03ld,%03ld] ", catalog.buckets_virtual_address[i]->slot[j].key,catalog.buckets_virtual_address[i]->slot[j].value);
+                printf("[%03ld] ", catalog.buckets_virtual_address[i]->slot[j].key);
+                
+                toprint.insert(catalog.buckets_virtual_address[i]->slot[j].key);
             }
             temp >>= 1;
         }
         temp = 128;
         for(int j = 8; j < 15; ++j){
             if((catalog.buckets_virtual_address[i]->bitmap[1] & temp) != 0){
-                printf("[%03ld,%03ld] ", catalog.buckets_virtual_address[i]->slot[j].key,catalog.buckets_virtual_address[i]->slot[j].value);
+                printf("[%03ld] ", catalog.buckets_virtual_address[i]->slot[j].key);
+                toprint.insert(catalog.buckets_virtual_address[i]->slot[j].key);
             }
             temp >>= 1;
         }
         printf("\n");
     }
+    std::set<uint64_t>::iterator iter;
+    printf("size: %ld\n",toprint.size());
+    for(iter = toprint.begin(); iter != toprint.end(); ++iter){
+        printf("%ld ", *iter);
+    }
+    printf("\n");
 }
 
 /**
@@ -676,35 +688,44 @@ int main()
     int num = 512;
     kv aaaa;
     uint64_t qq[1000];
+    // uint64_t qq[32] = {1950, 1740, 1002, 1564, 604, 1030, 1897, 1528, 290, 1138,
+    //                     1560, 387, 346, 715, 1417, 90, 1036, 1905, 1078, 373,
+    //                     1747, 1034, 1503, 1154, 1282, 217, 685, 1163, 1266, 796,
+    //                     1313, 1486};
     // qq[0] = 2;
     for(int i = 0; i < num; ++i){
         qq[i] = i;
     }
-    // for(int i = num - 1; i >= 1; --i){
-    //     my_swap(qq[i],qq[rand()%i]);
-    // }
+    for(int i = num - 1; i >= 1; --i){
+        my_swap(qq[i],qq[rand()%i]);
+    }
     kv aa;
     for(int i = 0; i < num; ++i){
-        aa.key = qq[i];
-        aa.value = qq[i] * 2;
+        // scanf("%ld", &aa.key);
+        // aa.key = (i + 1) * 4;
+        aa.key = qq[i]; 
+        // if(aa.key == 0) break;
+        aa.value = aa.key * 2;
+        printf("insert: %ld\t",aa.key);
         pmh->insert(aa);
         // if(i % 64 == 0){
         //     pmh->display();
         // }
-    }
-    pmh->display();
-    // uint64_t vlu = 0;
-    for(int i = 0; i < 448; ++i){
-        aa.key = qq[i];
-        // aa.value = i * 12;
-        pmh->remove(aa.key);   
-    }
-    pmh->display();
-    for(int i = 448; i < 448 + 4; ++i){
-        aa.key = qq[i];
-        pmh->remove(aa.key);
         pmh->display();
     }
+    
+    // uint64_t vlu = 0;
+    // for(int i = 0; i < 448; ++i){
+    //     aa.key = qq[i];
+    //     // aa.value = i * 12;
+    //     pmh->remove(aa.key);   
+    // }
+    // pmh->display();
+    // for(int i = 448; i < 448 + 4; ++i){
+    //     aa.key = qq[i];
+    //     pmh->remove(aa.key);
+    //     pmh->display();
+    // }
     pmh->selfDestory();
     // uint64_t new_vlu;
     // aaaa.key = 60;
