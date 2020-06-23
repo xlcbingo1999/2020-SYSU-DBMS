@@ -1,0 +1,114 @@
+********************************../../workloads/1w-rw-50-50-load.txt*******************************
+load total time : 0.025569s
+load total operations : 10000
+load operations per second : 391099
+run total Time : 0.001344s
+run total operations : 1000
+run operations per second : 744048
+INSERT : 0 INSERT_SUCCESS : 0
+UPDATE : 490 UPDATE_SUCCESS : 490
+READ : 510 READ_SUCCESS : 510
+DELETE : 0 DELETE_SUCCESS  : 0
+********************************../../workloads/1w-rw-50-50-run.txt*******************************
+********************************../../workloads/10w-rw-0-100-load.txt*******************************
+load total time : 0.477879s
+load total operations : 100000
+load operations per second : 209258
+run total Time : 0.111755s
+run total operations : 10000
+run operations per second : 89481.5
+INSERT : 10000 INSERT_SUCCESS : 10000
+UPDATE : 0 UPDATE_SUCCESS : 0
+READ : 0 READ_SUCCESS : 0
+DELETE : 0 DELETE_SUCCESS  : 0
+********************************../../workloads/10w-rw-0-100-run.txt*******************************
+********************************../../workloads/10w-rw-25-75-load.txt*******************************
+load total time : 0.47636s
+load total operations : 100000
+load operations per second : 209925
+run total Time : 0.082575s
+run total operations : 10000
+run operations per second : 121102
+INSERT : 7516 INSERT_SUCCESS : 7516
+UPDATE : 0 UPDATE_SUCCESS : 0
+READ : 2484 READ_SUCCESS : 2484
+DELETE : 0 DELETE_SUCCESS  : 0
+********************************../../workloads/10w-rw-25-75-run.txt*******************************
+********************************../../workloads/10w-rw-50-50-load.txt*******************************
+load total time : 0.48606s
+load total operations : 100000
+load operations per second : 205736
+run total Time : 0.058245s
+run total operations : 10000
+run operations per second : 171689
+INSERT : 5102 INSERT_SUCCESS : 5102
+UPDATE : 0 UPDATE_SUCCESS : 0
+READ : 4898 READ_SUCCESS : 4898
+DELETE : 0 DELETE_SUCCESS  : 0
+********************************../../workloads/10w-rw-50-50-run.txt*******************************
+********************************../../workloads/10w-rw-75-25-load.txt*******************************
+load total time : 0.469274s
+load total operations : 100000
+load operations per second : 213095
+run total Time : 0.032719s
+run total operations : 10000
+run operations per second : 305633
+INSERT : 2488 INSERT_SUCCESS : 2488
+UPDATE : 0 UPDATE_SUCCESS : 0
+READ : 7512 READ_SUCCESS : 7512
+DELETE : 0 DELETE_SUCCESS  : 0
+********************************../../workloads/10w-rw-75-25-run.txt*******************************
+********************************../../workloads/10w-rw-100-0-load.txt*******************************
+load total time : 0.46842s
+load total operations : 100000
+load operations per second : 213484
+run total Time : 0.009015s
+run total operations : 10000
+run operations per second : 1.10926e+06
+INSERT : 0 INSERT_SUCCESS : 0
+UPDATE : 0 UPDATE_SUCCESS : 0
+READ : 10000 READ_SUCCESS : 10000
+DELETE : 0 DELETE_SUCCESS  : 0
+********************************../../workloads/10w-rw-100-0-run.txt*******************************
+********************************../../workloads/220w-rw-50-50-load.txt*******************************
+load total time : 217.576s
+load total operations : 2200000
+load operations per second : 10111.4
+run total Time : 31.5976s
+run total operations : 350000
+run operations per second : 11076.8
+INSERT : 175452 INSERT_SUCCESS : 170165
+UPDATE : 0 UPDATE_SUCCESS : 0
+READ : 174548 READ_SUCCESS : 174548
+DELETE : 0 DELETE_SUCCESS  : 0
+********************************../../workloads/220w-rw-50-50-run.txt*******************************
+
+
+Running main() from ../gtest/googletest/src/gtest_main.cc
+[==========] Running 5 tests from 4 test suites.
+[----------] Global test environment set-up.
+[----------] 2 tests from InsertTest
+[ RUN      ] InsertTest.SingleInsert
+[       OK ] InsertTest.SingleInsert (5 ms)
+[ RUN      ] InsertTest.DuplicateInsert
+[       OK ] InsertTest.DuplicateInsert (0 ms)
+[----------] 2 tests from InsertTest (5 ms total)
+
+[----------] 1 test from UpdateTest
+[ RUN      ] UpdateTest.SingleUpdate
+[       OK ] UpdateTest.SingleUpdate (1 ms)
+[----------] 1 test from UpdateTest (1 ms total)
+
+[----------] 1 test from SearchTest
+[ RUN      ] SearchTest.SingleSearch
+[       OK ] SearchTest.SingleSearch (0 ms)
+[----------] 1 test from SearchTest (0 ms total)
+
+[----------] 1 test from RemoveTest
+[ RUN      ] RemoveTest.SingleRemove
+[       OK ] RemoveTest.SingleRemove (0 ms)
+[----------] 1 test from RemoveTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 5 tests from 4 test suites ran. (6 ms total)
+[  PASSED  ] 5 tests.
