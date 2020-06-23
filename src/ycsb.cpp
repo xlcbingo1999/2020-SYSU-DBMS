@@ -14,21 +14,21 @@ using std::fstream;
 int main()
 {
     string loadPath[7];
-    loadPath[0] = "../workloads/1w-rw-50-50-load.txt";
-    loadPath[1] = "../workloads/10w-rw-0-100-load.txt";
-    loadPath[2] = "../workloads/10w-rw-25-75-load.txt";
-    loadPath[3] = "../workloads/10w-rw-50-50-load.txt";
-    loadPath[4] = "../workloads/10w-rw-75-25-load.txt";
-    loadPath[5] = "../workloads/10w-rw-100-0-load.txt";
-    loadPath[6] = "../workloads/220w-rw-50-50-load.txt";
+    loadPath[0] = "../../workloads/1w-rw-50-50-load.txt";
+    loadPath[1] = "../../workloads/10w-rw-0-100-load.txt";
+    loadPath[2] = "../../workloads/10w-rw-25-75-load.txt";
+    loadPath[3] = "../../workloads/10w-rw-50-50-load.txt";
+    loadPath[4] = "../../workloads/10w-rw-75-25-load.txt";
+    loadPath[5] = "../../workloads/10w-rw-100-0-load.txt";
+    loadPath[6] = "../../workloads/220w-rw-50-50-load.txt";
     string runPath[7];
-    runPath[0] = "../workloads/1w-rw-50-50-run.txt";
-    runPath[1] = "../workloads/10w-rw-0-100-run.txt";
-    runPath[2] = "../workloads/10w-rw-25-75-run.txt";
-    runPath[3] = "../workloads/10w-rw-50-50-run.txt";
-    runPath[4] = "../workloads/10w-rw-75-25-run.txt";
-    runPath[5] = "../workloads/10w-rw-100-0-run.txt";
-    runPath[6] = "../workloads/220w-rw-50-50-run.txt";
+    runPath[0] = "../../workloads/1w-rw-50-50-run.txt";
+    runPath[1] = "../../workloads/10w-rw-0-100-run.txt";
+    runPath[2] = "../../workloads/10w-rw-25-75-run.txt";
+    runPath[3] = "../../workloads/10w-rw-50-50-run.txt";
+    runPath[4] = "../../workloads/10w-rw-75-25-run.txt";
+    runPath[5] = "../../workloads/10w-rw-100-0-run.txt";
+    runPath[6] = "../../workloads/220w-rw-50-50-run.txt";
 
     vector<string> loadOperation;
     vector<string> runOperation;

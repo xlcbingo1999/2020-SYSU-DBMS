@@ -10,12 +10,14 @@
 #include <set>
 #include <libpmem.h>
 #include <cstdint>
+#include <cstring>
 
 #define BUCKET_SLOT_NUM 15
 #define DEFAULT_CATALOG_SIZE 16
 #define META_NAME "pm_ehash_metadata";
 #define CATALOG_NAME "pm_ehash_catalog";
 #define PM_EHASH_DIRECTORY "/home/xlc/Desktop/2020-SYSU-DBMS/data/"; // add your own directory path to store the pm_ehash
+#define FILE_NAME "file_name";
 
 using std::map;
 using std::queue;

@@ -5,18 +5,18 @@
 CC := g++
 FLAGS := -g
 SRC_DIR := .
-INC_DIR := ../include
+INC_DIR := include
 BUILD_DIR := ./build
 BIN_DIR := ./bin
-INCLUDE := -I./$(INC_DIR)
+INCLUDE := -I../$(INC_DIR)
 
 $(BIN_DIR)/ycsb: $(BUILD_DIR)/data_page.o $(BUILD_DIR)/pm_ehash.o $(BUILD_DIR)/ycsb.o
 	@mkdir -p $(BIN_DIR)
-	$(CC) $(FLAGS) $(INCLUDE) $^ -o $@
+	$(CC) $(FLAGS) $(INCLUDE) $^ -o $@ -lpmem
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(BUILD_DIR)
-	$(CC) $(FLAGS) $(INCLUDE) -c -o $@ $<
+	$(CC) $(FLAGS) $(INCLUDE) -c -o $@ $< -lpmem
 
 clean:
 	@rm -rf $(BUILD_DIR)

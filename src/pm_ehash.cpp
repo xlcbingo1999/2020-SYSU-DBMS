@@ -14,7 +14,20 @@ PmEHash::PmEHash()
 {
     size_t map_len;
     int is_pmem;
-    metadata = (ehash_metadata*)pmem_map_file("/home/xlc/Desktop/2020-SYSU-DBMS/data/ehash_metadata", sizeof(ehash_metadata), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
+    const char *data_dir = PM_EHASH_DIRECTORY;
+    const char *meta_file = META_NAME;
+    char *final_dir;
+    int size_of_dir = strlen(data_dir) + strlen(meta_file) + 1;
+    final_dir = new char[size_of_dir];
+    int count = 0;
+    for(int i = 0; i < strlen(data_dir); ++i){
+        final_dir[count++] = data_dir[i];
+    }
+    for(int i = 0; i < strlen(meta_file); ++i){
+        final_dir[count++] = meta_file[i];
+    }
+    final_dir[count] = '\0';
+    metadata = (ehash_metadata*)pmem_map_file(final_dir, sizeof(ehash_metadata), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
     metadata->global_depth = 1;
     metadata->max_file_id = 0;
     metadata->catalog_size = 2;
@@ -452,7 +465,23 @@ void* PmEHash::getFreeSlot(pm_address& new_address)
  */
 void PmEHash::allocNewPage()
 {
-    std::string file_name = "/home/xlc/Desktop/2020-SYSU-DBMS/data/file_name";
+    const char *data_dir = PM_EHASH_DIRECTORY;
+    const char *data_file = FILE_NAME;
+    char *final_dir;
+    int size_of_dir = strlen(data_dir) + strlen(data_file) + 1;
+    final_dir = new char[size_of_dir];
+    int count = 0;
+    for(int i = 0; i < strlen(data_dir); ++i){
+        final_dir[count++] = data_dir[i];
+    }
+    for(int i = 0; i < strlen(data_file); ++i){
+        final_dir[count++] = data_file[i];
+    }
+    std::string file_name = "";
+    final_dir[count] = '\0';
+    for(int i = 0; i < size_of_dir - 1; ++i){
+        file_name += final_dir[i];
+    }
     uint64_t name_id = metadata->max_file_id;
     std::string name_id_str = std::to_string(name_id);
     file_name += name_id_str;
@@ -520,16 +549,44 @@ void PmEHash::mapAllPage()
  */
 void PmEHash::selfDestory()
 {
-    std::string file_name = "/home/xlc/Desktop/2020-SYSU-DBMS/data/file_name";
+    const char *data_dir = PM_EHASH_DIRECTORY;
+    const char *data_file = FILE_NAME;
+    char *final_dir;
+    int size_of_dir = strlen(data_dir) + strlen(data_file) + 1;
+    final_dir = new char[size_of_dir];
+    int count = 0;
+    for(int i = 0; i < strlen(data_dir); ++i){
+        final_dir[count++] = data_dir[i];
+    }
+    for(int i = 0; i < strlen(data_file); ++i){
+        final_dir[count++] = data_file[i];
+    }
+    std::string temp_file_name = "";
+    std::string file_name;
+    final_dir[count] = '\0';
+    for(int i = 0; i < size_of_dir - 1; ++i){
+        temp_file_name += final_dir[i];
+    }
     uint64_t name_id = metadata->max_file_id;
     for (uint64_t i = 0; i < name_id; ++i) {
-        file_name = "/home/xlc/Desktop/2020-SYSU-DBMS/data/file_name";
+        file_name = temp_file_name;
         std::string name_id_str = std::to_string(i);
         file_name += name_id_str;
         const char* file_name_c = file_name.c_str();
         std::remove(file_name_c);
     }
-    std::remove("/home/xlc/Desktop/2020-SYSU-DBMS/data/ehash_metadata");
+    const char *meta_file = META_NAME;
+    size_of_dir = strlen(data_dir) + strlen(meta_file) + 1;
+    final_dir = new char[size_of_dir];
+    count = 0;
+    for(int i = 0; i < strlen(data_dir); ++i){
+        final_dir[count++] = data_dir[i];
+    }
+    for(int i = 0; i < strlen(meta_file); ++i){
+        final_dir[count++] = meta_file[i];
+    }
+    final_dir[count] = '\0';
+    std::remove(final_dir);
     for (uint64_t i = 0; i < name_id; ++i) {
         page_pointer_table[i] = NULL;
     }
