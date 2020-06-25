@@ -11,6 +11,9 @@
 #include <libpmem.h>
 #include <cstdint>
 #include <cstring>
+#include <fstream>
+#include <iostream>
+#include <stdlib.h>
 
 #define BUCKET_SLOT_NUM 15
 #define DEFAULT_CATALOG_SIZE 16
@@ -68,6 +71,7 @@ typedef struct ehash_metadata {
 class PmEHash {
 private:
     data_page** page_pointer_table;
+    catalog_page_file** catalog_file_table;
 
     ehash_metadata* metadata; // virtual address of metadata, mapping the metadata file
     ehash_catalog catalog; // the catalog of hash

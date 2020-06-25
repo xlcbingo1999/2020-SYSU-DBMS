@@ -34,7 +34,7 @@ int main()
     vector<string> runOperation;
 
     string line;
-    for (int file_index = 0; file_index < 7; ++file_index) {
+    for (int file_index = 0; file_index < 6; ++file_index) {
         loadOperation.clear();
         runOperation.clear();
         fstream load(loadPath[file_index]);
@@ -48,7 +48,7 @@ int main()
         }
         run.close();
         clock_t loadStartTime, loadEndTime;
-
+        cout << "*******************************" << "BEGIN:" << loadPath[file_index] << "*******************************\n";
         loadStartTime = clock();
         PmEHash* ehash = new PmEHash;
         for (int i = 0; i < loadOperation.size(); i++) {
@@ -81,7 +81,7 @@ int main()
         }
 
         loadEndTime = clock();
-        cout << "********************************" << loadPath[file_index] << "*******************************\n";
+        
         cout << "load total time : " << (double)(loadEndTime - loadStartTime) / CLOCKS_PER_SEC << "s" << endl;
         cout << "load total operations : " << loadOperation.size() << endl;
         cout << "load operations per second : " << loadOperation.size() * CLOCKS_PER_SEC / (double)(loadEndTime - loadStartTime) << endl;
@@ -156,7 +156,95 @@ int main()
         cout << "UPDATE : " << UPDATE << " UPDATE_SUCCESS : " << UPDATE_SUCCESS << endl;
         cout << "READ : " << READ << " READ_SUCCESS : " << READ_SUCCESS << endl;
         cout << "DELETE : " << DELETE << " DELETE_SUCCESS  : " << DELETE_SUCCESS << endl;
-        cout << "********************************" << runPath[file_index] << "*******************************\n";
+        cout << "********************************" << "END:" << runPath[file_index] << "*******************************\n";
         ehash->selfDestory();
     }
 }
+
+// void my_swap(uint64_t &a, uint64_t &b){
+//     uint64_t temp = a;
+//     a = b;
+//     b = temp;
+// }
+
+// int main()
+// {
+//     bool a = true;
+//     srand((unsigned)time(0));
+//     PmEHash* pmh = new PmEHash;
+//     if(a){
+//         pmh->display();
+//         return 0;
+//     }
+//     int num = 20;
+//     kv aaaa;
+//     uint64_t qq[102400];
+    
+//     for(int i = 0; i < num; ++i){
+//         qq[i] = i;
+//     }
+//     // for(int i = num - 1; i >= 1; --i){
+//     //     my_swap(qq[i],qq[rand()%i]);
+//     // }
+//     kv aa;
+//     for(int i = 0; i < num; ++i){
+//         // scanf("%ld", &aa.key);
+//         // aa.key = (i + 1) * 4;
+//         aa.key = qq[i];
+//         // if(aa.key == 0) break;
+//         aa.value = aa.key * 2;
+//         // printf("insert: %ld\t",aa.key);
+//         pmh->insert(aa);
+//         // if(i % 64 == 0){
+//         //     pmh->display();
+//         // }
+//         // pmh->display();
+//     }
+//     pmh->display();
+//     // aa.key = 7680;
+//     // aa.value = aa.key * 2;
+//     // pmh->insert(aa);
+//     // // for(int i = num - 1; i >= 1; --i){
+//     //     my_swap(qq[i],qq[rand()%i]);
+//     // }
+//     // for(int i = 0; i < num; ++i){
+//     //     aa.key = qq[i];
+//     //     pmh->remove(aa.key);
+//     //     pmh->display();
+//     // }
+//     // pmh->selfDestory();
+//     // for(int i = 28; i < num/4; ++i){
+//     //     // scanf("%ld", &aa.key);
+//     //     // aa.key = (i + 1) * 4;
+//     //     aa.key = qq[i];
+//     //     // if(aa.key == 0) break;
+//     //     aa.value = aa.key * 2;
+//     //     printf("insert: %ld\t",aa.key);
+//     //     pmh->insert(aa);
+//     //     // if(i % 64 == 0){
+//     //     //     pmh->display();
+//     //     // }
+//     //     pmh->display();
+//     // }
+
+//     // uint64_t vlu = 0;
+//     // for(int i = 0; i < 448; ++i){
+//     //     aa.key = qq[i];
+//     //     // aa.value = i * 12;
+//     //     pmh->remove(aa.key);
+//     // }
+//     // pmh->display();
+//     // for(int i = 448; i < 448 + 4; ++i){
+//     //     aa.key = qq[i];
+//     //     pmh->remove(aa.key);
+//     //     pmh->display();
+//     // }
+    
+//     // uint64_t new_vlu;
+//     // aaaa.key = 60;
+//     // aaaa.value = 60 * 2;
+//     // pmh->insert(aaaa);
+//     // pmh->search(60, new_vlu); // cannot find dest
+//     // printf("key: %d, value: %ld\n",60, new_vlu);
+//     // pmh->~PmEHash();
+// }

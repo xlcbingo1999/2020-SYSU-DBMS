@@ -12,39 +12,69 @@
  */
 PmEHash::PmEHash()
 {
+
     size_t map_len;
     int is_pmem;
-    const char *data_dir = PM_EHASH_DIRECTORY;
-    const char *meta_file = META_NAME;
-    char *final_dir;
-    int size_of_dir = strlen(data_dir) + strlen(meta_file) + 1;
-    final_dir = new char[size_of_dir];
+    const char* data_dir = PM_EHASH_DIRECTORY;
+    const char* meta_file_dir = META_NAME;
+    const char* catalog_file_dir = CATALOG_NAME;
+
+    int size_of_dir = strlen(data_dir) + strlen(meta_file_dir) + 1;
+    int size_of_catalog_dir = strlen(data_dir) + strlen(catalog_file_dir) + 2;
+    char* final_meta_dir;
+    final_meta_dir = new char[size_of_dir];
     int count = 0;
-    for(int i = 0; i < strlen(data_dir); ++i){
-        final_dir[count++] = data_dir[i];
+    for (int i = 0; i < strlen(data_dir); ++i) {
+        final_meta_dir[count++] = data_dir[i];
     }
-    for(int i = 0; i < strlen(meta_file); ++i){
-        final_dir[count++] = meta_file[i];
+    for (int i = 0; i < strlen(meta_file_dir); ++i) {
+        final_meta_dir[count++] = meta_file_dir[i];
     }
-    final_dir[count] = '\0';
+    final_meta_dir[count] = '\0';
+
+    char* final_catalog_dir;
+    final_catalog_dir = new char[size_of_catalog_dir];
+    count = 0;
+    for (int i = 0; i < strlen(data_dir); ++i) {
+        final_catalog_dir[count++] = data_dir[i];
+    }
+    for (int i = 0; i < strlen(catalog_file_dir); ++i) {
+        final_catalog_dir[count++] = catalog_file_dir[i];
+    }
+    final_catalog_dir[count] = '0';
+    final_catalog_dir[count + 1] = '\0';
     // 新建ehash_metadata文件
-    metadata = (ehash_metadata*)pmem_map_file(final_dir, sizeof(ehash_metadata), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
-    metadata->global_depth = 1;
-    metadata->max_file_id = 0;
-    metadata->catalog_size = 2;
-    allocNewPage(); // 直接获取一个新的页面
-    // 直接新建两个桶
-    catalog.buckets_pm_address = new pm_address[2];
-    catalog.buckets_virtual_address = new pm_bucket*[2];
-    for (int i = 0; i < 2; ++i) {
-        pm_address new_pm_address;
-        pm_bucket* new_bucket = (pm_bucket*)getFreeSlot(new_pm_address);
-        new_bucket->bitmap[0] = 0;
-        new_bucket->bitmap[1] = 0;
-        new_bucket->local_depth = metadata->global_depth;
-        catalog.buckets_pm_address[i].fileId = new_pm_address.fileId;
-        catalog.buckets_pm_address[i].offset = new_pm_address.offset;
-        catalog.buckets_virtual_address[i] = new_bucket;
+
+    std::ifstream fin(final_meta_dir);
+    if (!fin) {
+        fin.close();
+        metadata = (ehash_metadata*)pmem_map_file(final_meta_dir, sizeof(ehash_metadata), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
+        metadata->max_file_id = 0;
+        metadata->catalog_size = 2;
+        metadata->global_depth = 1;
+        pmem_persist(metadata,sizeof(ehash_metadata));
+        allocNewPage(); // 直接获取一个新的页面
+        catalog_file_table = new catalog_page_file*[1];
+        catalog_file_table[0] = (catalog_page_file*)pmem_map_file(final_catalog_dir, sizeof(catalog_page_file), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
+        // 直接新建两个桶
+        catalog.buckets_pm_address = new pm_address[2];
+        catalog.buckets_virtual_address = new pm_bucket*[2];
+        for (int i = 0; i < 2; ++i) {
+            pm_address new_pm_address;
+            pm_bucket* new_bucket = (pm_bucket*)getFreeSlot(new_pm_address);
+            new_bucket->bitmap[0] = 0;
+            new_bucket->bitmap[1] = 0;
+            new_bucket->local_depth = metadata->global_depth;
+            catalog.buckets_pm_address[i].fileId = new_pm_address.fileId;
+            catalog.buckets_pm_address[i].offset = new_pm_address.offset;
+            catalog.buckets_virtual_address[i] = new_bucket;
+            catalog_file_table[0]->catalog_item[i].fileId = new_pm_address.fileId;
+            catalog_file_table[0]->catalog_item[i].offset = new_pm_address.offset;
+        }
+        
+    } else {
+        fin.close();
+        recover();
     }
 }
 /**
@@ -54,11 +84,18 @@ PmEHash::PmEHash()
  */
 PmEHash::~PmEHash()
 {
-    // pmem_persist(metadata, sizeof(ehash_metadata));
+    pmem_persist(metadata, sizeof(ehash_metadata));
     pmem_unmap(metadata, sizeof(ehash_metadata));
     for (int i = 0; i < metadata->max_file_id; ++i) {
         // pmem_persist(page_pointer_table[i], sizeof(data_page));
         pmem_unmap(page_pointer_table[i], sizeof(data_page));
+    }
+    uint64_t cat_size = 0;
+    if(metadata->catalog_size < 512) cat_size = 1;
+    else cat_size = metadata->catalog_size / 512;
+    for (int i = 0; i < cat_size; ++i){
+        pmem_persist(catalog_file_table[i],sizeof(catalog_page_file));
+        pmem_unmap(catalog_file_table[i],sizeof(catalog_page_file));
     }
 }
 
@@ -86,6 +123,7 @@ int PmEHash::insert(kv new_kv_pair)
         page_pointer_table[fid]->page_bucket[index_bitmap].inner_kv[i].value = toInsertBucket->slot[i].value;
     }
     pmem_persist(page_pointer_table[fid], sizeof(data_page)); // 每次insert操作之后都会进行persist
+    
     return 0;
 }
 
@@ -346,6 +384,8 @@ void PmEHash::splitBucket(uint64_t bucket_id)
     for (int i = 0; i < metadata->catalog_size; ++i) {
         if ((i % (1 << ori_bucket->local_depth)) == yu) {
             catalog.buckets_virtual_address[i] = new_bucket;
+            catalog_file_table[i/512]->catalog_item[i%512].fileId = new_pm_address.fileId;
+            catalog_file_table[i/512]->catalog_item[i%512].offset = new_pm_address.offset;
         }
     }
     uint64_t to_insert_bucketid;
@@ -358,7 +398,9 @@ void PmEHash::splitBucket(uint64_t bucket_id)
     }
     catalog.buckets_pm_address[to_bucket_id].fileId = new_pm_address.fileId;
     catalog.buckets_pm_address[to_bucket_id].offset = new_pm_address.offset;
-
+    catalog_file_table[to_bucket_id/512]->catalog_item[to_bucket_id%512].fileId = new_pm_address.fileId;
+    catalog_file_table[to_bucket_id/512]->catalog_item[to_bucket_id%512].offset = new_pm_address.offset;
+    
     uint32_t new_fid = new_pm_address.fileId;
     int index_bitmap = (new_pm_address.offset - 2) / 255;
     page_pointer_table[new_fid]->bitmap ^= (page_pointer_table[new_fid]->bitmap & (1 << (15 - index_bitmap)) ^ (1 << (15 - index_bitmap)));
@@ -381,6 +423,7 @@ void PmEHash::splitBucket(uint64_t bucket_id)
         page_pointer_table[ori_fid]->page_bucket[index_bitmap].inner_kv[i].value = ori_bucket->slot[i].value;
     }
     pmem_persist(page_pointer_table[ori_fid], sizeof(data_page));
+    
 }
 
 /**
@@ -428,24 +471,84 @@ void PmEHash::mergeBucket(uint64_t bucket_id)
 void PmEHash::extendCatalog()
 {
     uint64_t ori_cata_size = metadata->catalog_size;
+    int ori_cata_file_num;
+    if(ori_cata_size < 512){
+        ori_cata_file_num = 1;
+    } else {
+        ori_cata_file_num = ori_cata_size / 512;
+    }
     uint64_t free_bucket_size = free_list.size();
     ehash_catalog temp_catalog;
     temp_catalog.buckets_pm_address = new pm_address[ori_cata_size];
     temp_catalog.buckets_virtual_address = new pm_bucket*[ori_cata_size];
+    catalog_page_file* temp_catalog_file_table[ori_cata_file_num];
     for (int i = 0; i < ori_cata_size; ++i) {
         temp_catalog.buckets_pm_address[i] = catalog.buckets_pm_address[i];
         temp_catalog.buckets_virtual_address[i] = catalog.buckets_virtual_address[i];
     }
+    for(int i = 0; i < ori_cata_file_num; ++i) {
+        temp_catalog_file_table[i] = catalog_file_table[i];
+    }
     catalog.buckets_pm_address = new pm_address[ori_cata_size * 2];
     catalog.buckets_virtual_address = new pm_bucket*[ori_cata_size * 2];
+    
+    size_t map_len;
+    int is_pmem;
+    if(ori_cata_size >= 512){
+        catalog_file_table = new catalog_page_file*[ori_cata_file_num * 2];
+    }
+
     for (int i = 0; i < ori_cata_size; ++i) {
         catalog.buckets_pm_address[i] = temp_catalog.buckets_pm_address[i];
         catalog.buckets_virtual_address[i] = temp_catalog.buckets_virtual_address[i];
         catalog.buckets_pm_address[ori_cata_size + i] = temp_catalog.buckets_pm_address[i];
         catalog.buckets_virtual_address[ori_cata_size + i] = temp_catalog.buckets_virtual_address[i];
     }
+
+    const char* data_dir = PM_EHASH_DIRECTORY;
+    const char* catalog_file_dir = CATALOG_NAME;
+    int size_of_catalog_dir = strlen(data_dir) + strlen(catalog_file_dir) + 1;
+    int count = 0;
+    char* temp_catalog_dir;
+    temp_catalog_dir = new char[size_of_catalog_dir];
+    for (int i = 0; i < strlen(data_dir); ++i) {
+        temp_catalog_dir[count++] = data_dir[i];
+    }
+    for (int i = 0; i < strlen(catalog_file_dir); ++i) {
+        temp_catalog_dir[count++] = catalog_file_dir[i];
+    }
+    temp_catalog_dir[count] = '\0';
+    std::string fin_catalog_dir = "";
+    for(int i = 0; i < count; ++i){
+        fin_catalog_dir += temp_catalog_dir[i];
+    }
+    std::string temp_fin_catalog_dir = fin_catalog_dir;
+    for (int i = 0; i < ori_cata_size; ++i) {
+        if(i % 512 == 0){
+            std::string num2string = std::to_string(i/512);
+            fin_catalog_dir = temp_fin_catalog_dir;
+            fin_catalog_dir += num2string;
+            const char* final_catalog_dir = fin_catalog_dir.c_str();
+            catalog_file_table[i/512] = (catalog_page_file*)pmem_map_file(final_catalog_dir, sizeof(catalog_page_file), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
+            // catalog_file_table[i/512] = temp_catalog_file_table[i/512];
+        } 
+        catalog_file_table[i/512]->catalog_item[i%512].fileId = catalog.buckets_pm_address[i].fileId;
+        catalog_file_table[i/512]->catalog_item[i%512].offset = catalog.buckets_pm_address[i].offset;
+        if((i + ori_cata_size) % 512 == 0){
+            std::string num2string = std::to_string((i + ori_cata_size) / 512);
+            fin_catalog_dir = temp_fin_catalog_dir;
+            fin_catalog_dir += num2string;
+            const char* final_catalog_dir = fin_catalog_dir.c_str();
+            catalog_file_table[(i + ori_cata_size) / 512] = (catalog_page_file*)pmem_map_file(final_catalog_dir, sizeof(catalog_page_file), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
+            // catalog_file_table[(i + ori_cata_size) / 512] = temp_catalog_file_table[i];
+        }
+        catalog_file_table[(i + ori_cata_size)/512]->catalog_item[(i + ori_cata_size)%512].fileId = catalog.buckets_pm_address[i+ori_cata_size].fileId;
+        catalog_file_table[(i + ori_cata_size)/512]->catalog_item[(i + ori_cata_size)%512].offset = catalog.buckets_pm_address[i+ori_cata_size].offset;
+    }
+
     metadata->catalog_size = ori_cata_size * 2;
     metadata->global_depth += 1;
+    
 }
 
 /**
@@ -460,6 +563,10 @@ void* PmEHash::getFreeSlot(pm_address& new_address)
     }
     pm_bucket* new_bucket = free_list.front();
     new_bucket->local_depth = metadata->global_depth; // maybe problem.
+    uint32_t fid = vAddr2pmAddr.find(new_bucket)->second.fileId;
+    uint32_t off = vAddr2pmAddr.find(new_bucket)->second.offset;
+    uint32_t index_bitmap = (off - 2) / 255;
+    page_pointer_table[fid]->bitmap ^= (page_pointer_table[fid]->bitmap & (1 << (15 - index_bitmap)) ^ (1 << (15 - index_bitmap)));
     free_list.pop();
     new_address = vAddr2pmAddr.find(new_bucket)->second;
     return new_bucket;
@@ -472,21 +579,21 @@ void* PmEHash::getFreeSlot(pm_address& new_address)
  */
 void PmEHash::allocNewPage()
 {
-    const char *data_dir = PM_EHASH_DIRECTORY;
-    const char *data_file = FILE_NAME;
-    char *final_dir;
+    const char* data_dir = PM_EHASH_DIRECTORY;
+    const char* data_file = FILE_NAME;
+    char* final_dir;
     int size_of_dir = strlen(data_dir) + strlen(data_file) + 1;
     final_dir = new char[size_of_dir];
     int count = 0;
-    for(int i = 0; i < strlen(data_dir); ++i){
+    for (int i = 0; i < strlen(data_dir); ++i) {
         final_dir[count++] = data_dir[i];
     }
-    for(int i = 0; i < strlen(data_file); ++i){
+    for (int i = 0; i < strlen(data_file); ++i) {
         final_dir[count++] = data_file[i];
     }
     std::string file_name = "";
     final_dir[count] = '\0';
-    for(int i = 0; i < size_of_dir - 1; ++i){
+    for (int i = 0; i < size_of_dir - 1; ++i) {
         file_name += final_dir[i];
     }
     uint64_t name_id = metadata->max_file_id;
@@ -529,7 +636,8 @@ void PmEHash::allocNewPage()
         vAddr2pmAddr.insert(std::make_pair(new_bucket[j], new_address[j]));
         pmAddr2vAddr.insert(std::make_pair(new_address[j], new_bucket[j]));
     }
-    metadata->max_file_id = metadata->max_file_id + 1;
+    metadata->max_file_id += 1;
+    pmem_persist(metadata, sizeof(ehash_metadata));
 }
 
 /**
@@ -539,6 +647,61 @@ void PmEHash::allocNewPage()
  */
 void PmEHash::recover()
 {
+    const char* data_dir = PM_EHASH_DIRECTORY;
+    const char* meta_file = META_NAME;
+    char* final_dir;
+    int size_of_dir = strlen(data_dir) + strlen(meta_file) + 1;
+    final_dir = new char[size_of_dir];
+    int count = 0;
+    for (int i = 0; i < strlen(data_dir); ++i) {
+        final_dir[count++] = data_dir[i];
+    }
+    for (int i = 0; i < strlen(meta_file); ++i) {
+        final_dir[count++] = meta_file[i];
+    }
+    final_dir[count] = '\0';
+    std::fstream file_d;
+    char catalog_size_temp[8];
+    char max_file_id_temp[8];
+    char global_depth_temp[8];
+    uint64_t catalog_size_num = 0;
+    uint64_t max_file_id_num = 0;
+    uint64_t global_depth_num = 0;
+    file_d.open(final_dir, std::ios::in | std::ios::out | std::ios::binary);
+    if (file_d.is_open()) {
+        for (int k = 0; k < 8; ++k) {
+            file_d >> max_file_id_temp[k];
+        }
+        for (int k = 7; k >= 0; --k) {
+            max_file_id_num = max_file_id_num * 128 + max_file_id_temp[k];
+        }
+        std::cout << "max_file_id_num:" << max_file_id_num << std::endl;
+
+        for (int k = 0; k < 8; ++k) {
+            file_d >> catalog_size_temp[k];
+        }
+        for (int k = 7; k >= 0; --k) {
+            catalog_size_num = catalog_size_num * 128 + catalog_size_temp[k];
+        }
+        std::cout << "catalog_size_num" << catalog_size_num << std::endl;
+        
+        for (int k = 0; k < 8; ++k) {
+            file_d >> global_depth_temp[k];
+        }
+        for (int k = 7; k >= 0; --k) {
+            global_depth_num = global_depth_num * 128 + global_depth_temp[k];
+        }
+        std::cout << "global_depth_num" << global_depth_num << std::endl;
+        file_d.close();
+    }
+    size_t map_len;
+    int is_pmem;
+    metadata = (ehash_metadata*)pmem_map_file(final_dir, sizeof(ehash_metadata), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
+    metadata->catalog_size = catalog_size_num;
+    metadata->max_file_id = max_file_id_num;
+    metadata->global_depth = global_depth_num;
+    pmem_persist(metadata,sizeof(ehash_metadata));
+    mapAllPage();
 }
 
 /**
@@ -548,6 +711,195 @@ void PmEHash::recover()
  */
 void PmEHash::mapAllPage()
 {
+    const char* data_dir = PM_EHASH_DIRECTORY;
+    const char* data_file_name = FILE_NAME;
+    int size_of_data_file_dir = strlen(data_dir) + strlen(data_file_name) + 1;
+    int strcount = 0;
+    char *temp_data_file_dir = new char[size_of_data_file_dir];
+    for(int i = 0; i < strlen(data_dir); ++i){
+        temp_data_file_dir[strcount++] = data_dir[i];
+    }
+    for(int i = 0; i < strlen(data_file_name); ++i){
+        temp_data_file_dir[strcount++] = data_file_name[i];
+    }
+    temp_data_file_dir[strcount] = '\0';
+    std::string data_file_head_dir = "";
+    for(int i = 0; i < strcount; ++i){
+        data_file_head_dir += temp_data_file_dir[i];
+    }
+    std::string temp_data_file_head_dir = data_file_head_dir;
+    page_pointer_table = new data_page*[metadata->max_file_id];
+    data_page** page_pointer_table_temp;
+    page_pointer_table_temp = new data_page*[metadata->max_file_id];
+    for(int i = 0; i < metadata->max_file_id; ++i){
+        page_pointer_table_temp[i] = new data_page;
+    }
+    std::fstream file_d;
+    uint8_t temp_bitmap[2];
+    uint8_t temp_slot_bitmap[2];
+    uint8_t temp_key[8];
+    uint8_t temp_value[8];
+    uint8_t temp_unable;
+    uint16_t bitmap_get = 0;
+    uint8_t slotbitmap_get[2] = {0 , 0};
+    uint64_t key_get = 0;
+    uint64_t value_get = 0;
+    for(int i = 0; i < metadata->max_file_id; ++i){
+        data_file_head_dir = temp_data_file_head_dir;
+        std::string num2string = std::to_string(i);
+        data_file_head_dir += num2string;
+        const char* data_file_head_dir_cstr = data_file_head_dir.c_str();
+        if(file_d.is_open()) file_d.close();
+        file_d.open(data_file_head_dir_cstr, std::ios::in | std::ios::out | std::ios::binary);
+        bitmap_get = 0;
+        for(int j = 0; j < 2; ++j) {
+            file_d >> temp_bitmap[j];
+        }
+        for(int j = 1; j >= 0; --j) {
+            bitmap_get = bitmap_get * 128 + temp_bitmap[j];
+        }
+        page_pointer_table_temp[i]->bitmap = bitmap_get;
+
+        for(int j = 0; j < 6; ++j) {
+            file_d >> temp_unable;
+        }
+        for(int slot_in_page = 0; slot_in_page < DATA_PAGE_SLOT_NUM; ++slot_in_page){
+            for(int j = 0; j < 2; ++j) {
+                file_d >> temp_slot_bitmap[j];
+            }
+            for(int j = 0; j < 2; ++j) {
+                page_pointer_table_temp[i]->page_bucket[slot_in_page].bitmap[j] = temp_slot_bitmap[j];
+            }
+            for(int j = 0; j < 6; ++j) {
+                file_d >> temp_unable;
+            }
+            for(int slot_in_bucket = 0; slot_in_bucket < BUCKET_SLOT_NUM; ++slot_in_bucket) {
+                key_get = 0;
+                value_get = 0;
+                for(int j = 0; j < 8; ++j){
+                    file_d >> temp_key[j];
+                }
+                for(int j = 7; j >= 0; --j){
+                    key_get = key_get * 128 + temp_key[j];
+                }
+                page_pointer_table_temp[i]->page_bucket[slot_in_page].inner_kv[slot_in_bucket].key = key_get;
+
+                for(int j = 0; j < 8; ++j){
+                    file_d >> temp_value[j];
+                }
+                for(int j = 7; j >= 0; --j){
+                    value_get = value_get * 128 + temp_value[j];
+                }
+                page_pointer_table_temp[i]->page_bucket[slot_in_page].inner_kv[slot_in_bucket].value = value_get;
+            }
+            for(int j = 0; j < 16; ++j) {
+                file_d >> temp_unable;
+            }
+        }
+    }
+    file_d.close();
+    size_t map_len;
+    int is_pmem;
+    for(int i = 0; i < metadata->max_file_id; ++i){
+        data_file_head_dir = temp_data_file_head_dir;
+        std::string num2string = std::to_string(i);
+        data_file_head_dir += num2string;
+        const char* data_file_head_dir_cstr = data_file_head_dir.c_str();
+        page_pointer_table[i] = (data_page*)pmem_map_file(data_file_head_dir_cstr,sizeof(data_page), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
+        page_pointer_table[i]->bitmap = page_pointer_table_temp[i]->bitmap;
+        for(int j = 0; j < DATA_PAGE_SLOT_NUM; ++j){
+            for(int k = 0; k < 2; ++k) page_pointer_table[i]->page_bucket[j].bitmap[k] =page_pointer_table_temp[i]->page_bucket[j].bitmap[k];
+            for(int k = 0; k < BUCKET_SLOT_NUM; ++k) {
+                page_pointer_table[i]->page_bucket[j].inner_kv[k].key =page_pointer_table_temp[i]->page_bucket[j].inner_kv[k].key ;
+                page_pointer_table[i]->page_bucket[j].inner_kv[k].value =page_pointer_table_temp[i]->page_bucket[j].inner_kv[k].value ;
+            }
+        }
+    }
+
+    const char* catalog_file_dir = CATALOG_NAME;
+    int size_of_catalog_dir = strlen(data_dir) + strlen(catalog_file_dir) + 1;
+    int count = 0;
+    char* temp_catalog_dir;
+    temp_catalog_dir = new char[size_of_catalog_dir];
+    for (int i = 0; i < strlen(data_dir); ++i) {
+        temp_catalog_dir[count++] = data_dir[i];
+    }
+    for (int i = 0; i < strlen(catalog_file_dir); ++i) {
+        temp_catalog_dir[count++] = catalog_file_dir[i];
+    }
+    temp_catalog_dir[count] = '\0';
+    std::string catalog_head_dir = "";
+    for(int i = 0; i < count; ++i){
+        catalog_head_dir += temp_catalog_dir[i];
+    }
+    std::string temp_catalog_head_dir = catalog_head_dir;
+    char fid_temp[4];
+    char off_temp[4];
+    uint32_t fid_get = 0;
+    uint32_t off_get = 0;
+    uint64_t catalog_page_file_num = (metadata->catalog_size % 512 == 0) ? (metadata->catalog_size / 512) : (metadata->catalog_size % 512 + 1);
+    catalog_file_table = new catalog_page_file*[catalog_page_file_num];
+    catalog.buckets_virtual_address = new pm_bucket*[metadata->catalog_size];
+    catalog.buckets_pm_address = new pm_address[metadata->catalog_size];
+    std::map<pm_address,uint32_t> address_table;
+    for(int i = 0; i < metadata->catalog_size; ++i){
+        if(i % 512 == 0){
+            catalog_head_dir = temp_catalog_head_dir;
+            std::string num2string = std::to_string(i / 512);
+            catalog_head_dir += num2string;
+            const char* catalog_head_dir_cstr = catalog_head_dir.c_str();
+            if(file_d.is_open()) file_d.close();
+            file_d.open(catalog_head_dir_cstr, std::ios::in | std::ios::out | std::ios::binary);
+        }
+        fid_get = 0;
+        off_get = 0;
+        for(int j = 0; j < 4; ++j){
+            file_d >> fid_temp[j];
+        }
+        for(int j = 3; j >= 0; --j){
+            fid_get = fid_get * 128 + fid_temp[j];
+        }
+        catalog.buckets_pm_address[i].fileId = fid_get;
+        for(int j = 0; j < 4; ++j){
+            file_d >> off_temp[j];
+        }
+        for(int j = 3; j >= 0; --j){
+            off_get = off_get * 128 + off_temp[j];
+        }
+        catalog.buckets_pm_address[i].offset = off_get;
+        pm_address new_address;
+        new_address.fileId = fid_get;
+        new_address.offset = off_get;
+        std::map<pm_address,uint32_t>::iterator iter;
+        for(iter = address_table.begin(); iter != address_table.end(); ++iter){
+            if(iter->first.fileId == new_address.fileId && iter->first.offset == new_address.fileId) {
+                address_table[new_address] += 1;
+                break;
+            }
+        }
+        if(iter == address_table.end()){
+            address_table.insert(std::make_pair(new_address,1));
+        }
+    }
+    file_d.close();
+    std::map<pm_address,uint32_t>::iterator iter;
+    for(iter = address_table.begin(); iter != address_table.end(); ++iter){
+        pm_bucket* new_bucket = new pm_bucket;
+        new_bucket->local_depth =  (metadata->global_depth >> iter->second);
+        new_bucket->bitmap[0] = page_pointer_table[iter->first.fileId]->page_bucket[(iter->first.offset-2)/255].bitmap[0];
+        new_bucket->bitmap[1] = page_pointer_table[iter->first.fileId]->page_bucket[(iter->first.offset-2)/255].bitmap[1];
+        for(int j = 0; j < BUCKET_SLOT_NUM; ++j){
+            new_bucket->slot[j].key = page_pointer_table[iter->first.fileId]->page_bucket[(iter->first.offset-2)/255].inner_kv[j].key;
+            new_bucket->slot[j].value = page_pointer_table[iter->first.fileId]->page_bucket[(iter->first.offset-2)/255].inner_kv[j].value;
+        }
+        vAddr2pmAddr.insert(std::make_pair(new_bucket,iter->first));
+        pmAddr2vAddr.insert(std::make_pair(iter->first,new_bucket));
+        for(int j = 0; j < metadata->catalog_size; ++j){
+            if(catalog.buckets_pm_address[j].fileId == iter->first.fileId && catalog.buckets_pm_address[j].offset == iter->first.offset){
+                catalog.buckets_virtual_address[j] = new_bucket;
+            }
+        }
+    }
 }
 
 /**
@@ -557,22 +909,22 @@ void PmEHash::mapAllPage()
  */
 void PmEHash::selfDestory()
 {
-    const char *data_dir = PM_EHASH_DIRECTORY;
-    const char *data_file = FILE_NAME;
-    char *final_dir;
+    const char* data_dir = PM_EHASH_DIRECTORY;
+    const char* data_file = FILE_NAME;
+    char* final_dir;
     int size_of_dir = strlen(data_dir) + strlen(data_file) + 1;
     final_dir = new char[size_of_dir];
     int count = 0;
-    for(int i = 0; i < strlen(data_dir); ++i){
+    for (int i = 0; i < strlen(data_dir); ++i) {
         final_dir[count++] = data_dir[i];
     }
-    for(int i = 0; i < strlen(data_file); ++i){
+    for (int i = 0; i < strlen(data_file); ++i) {
         final_dir[count++] = data_file[i];
     }
     std::string temp_file_name = "";
     std::string file_name;
     final_dir[count] = '\0';
-    for(int i = 0; i < size_of_dir - 1; ++i){
+    for (int i = 0; i < size_of_dir - 1; ++i) {
         temp_file_name += final_dir[i];
     }
     uint64_t name_id = metadata->max_file_id;
@@ -584,14 +936,15 @@ void PmEHash::selfDestory()
         // 删除data目录中的数据文件
         std::remove(file_name_c);
     }
-    const char *meta_file = META_NAME;
+
+    const char* meta_file = META_NAME;
     size_of_dir = strlen(data_dir) + strlen(meta_file) + 1;
     final_dir = new char[size_of_dir];
     count = 0;
-    for(int i = 0; i < strlen(data_dir); ++i){
+    for (int i = 0; i < strlen(data_dir); ++i) {
         final_dir[count++] = data_dir[i];
     }
-    for(int i = 0; i < strlen(meta_file); ++i){
+    for (int i = 0; i < strlen(meta_file); ++i) {
         final_dir[count++] = meta_file[i];
     }
     final_dir[count] = '\0';
@@ -600,6 +953,36 @@ void PmEHash::selfDestory()
     for (uint64_t i = 0; i < name_id; ++i) {
         page_pointer_table[i] = NULL;
     }
+
+    const char* cata_file = CATALOG_NAME;
+    size_of_dir = strlen(data_dir) + strlen(cata_file) + 1;
+    final_dir = new char[size_of_dir];
+    count = 0;
+    for (int i = 0; i < strlen(data_dir); ++i) {
+        final_dir[count++] = data_dir[i];
+    }
+    for (int i = 0; i < strlen(cata_file); ++i) {
+        final_dir[count++] = cata_file[i];
+    }
+    final_dir[count] = '\0';
+    std::string dir_string = "";
+    for(int i = 0; i < size_of_dir - 1; ++i){
+        dir_string += final_dir[i];
+    }
+    name_id = ((metadata->catalog_size / 512) == 0) ? 1 : (metadata->catalog_size / 512);
+    for (uint64_t i = 0; i < name_id; ++i) {
+        file_name = dir_string;
+        std::string name_id_str = std::to_string(i);
+        file_name += name_id_str;
+        const char* file_name_c = file_name.c_str();
+        // 删除data目录中的catalog文件
+        std::remove(file_name_c);
+    }
+    
+    for (uint64_t i = 0; i < name_id; ++i) {
+        catalog_file_table[i] = NULL;
+    }
+
     // 将目录清空
     for (int i = 0; i < metadata->catalog_size; ++i) {
         catalog.buckets_pm_address[i].fileId = 0;
