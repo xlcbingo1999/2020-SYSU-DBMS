@@ -420,7 +420,7 @@ void* PmEHash::getFreeSlot(pm_address& new_address)
         allocNewPage();
     }
     pm_bucket* new_bucket = free_list.front();
-    new_bucket->local_depth = metadata->global_depth; // maybe problem.
+    new_bucket->local_depth = metadata->global_depth;
     uint32_t fid = vAddr2pmAddr.find(new_bucket)->second.fileId;
     uint32_t off = vAddr2pmAddr.find(new_bucket)->second.offset;
     uint32_t index_bitmap = (off - 2) / 255;
@@ -1025,17 +1025,15 @@ return 0;
 
 ### 4.1.1 挂载操作系统 
 
-* 
+* mkfs.ext4 /dev/pmem0
 * mount -o dax /dev/pmem0 [你的数据地址] -v
 * df -h 查看挂载结果
 
 ### 4.1.2 make gtest 
 
-​	测试结果如下图：
+​	本例子中，我们并没有编写data_page.cpp的内容，因此我们在这里并没有修改makefile的内容，直接输入`make clean`和`make`即可直接运行。
 
-![NceGo4.jpg](https://s1.ax1x.com/2020/06/27/NceGo4.jpg)
-
-​	由gtest测试可以看出，我们完成了可拓展哈希的基本设计，可以进行YSCB的测试。
+​	gtest的测试相对简单，其实在真实实验环境中我们还是自己写了测试，或者使用ycsb.cpp进行测试。
 
 ### 4.1.3 make ycsb 
 
