@@ -2,7 +2,7 @@
 
 /**
  * @description: construct a new instance of PmEHash in a default directory
- * @param NULL
+ * @param NULL 
  * @return: new instance of PmEHash
  */
 PmEHash::PmEHash() {
