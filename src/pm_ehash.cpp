@@ -12,39 +12,100 @@
  */
 PmEHash::PmEHash()
 {
+
     size_t map_len;
     int is_pmem;
-    const char *data_dir = PM_EHASH_DIRECTORY;
-    const char *meta_file = META_NAME;
-    char *final_dir;
-    int size_of_dir = strlen(data_dir) + strlen(meta_file) + 1;
-    final_dir = new char[size_of_dir];
+    const char* data_dir = PM_EHASH_DIRECTORY;
+    const char* meta_file_dir = META_NAME;
+    const char* catalog_file_dir = CATALOG_NAME;
+
+    int size_of_dir = strlen(data_dir) + strlen(meta_file_dir) + 1;
+    int size_of_catalog_dir = strlen(data_dir) + strlen(catalog_file_dir) + 2;
+    char* final_meta_dir;
+    final_meta_dir = new char[size_of_dir];
     int count = 0;
-    for(int i = 0; i < strlen(data_dir); ++i){
-        final_dir[count++] = data_dir[i];
+    for (int i = 0; i < strlen(data_dir); ++i) {
+        final_meta_dir[count++] = data_dir[i];
     }
-    for(int i = 0; i < strlen(meta_file); ++i){
-        final_dir[count++] = meta_file[i];
+    for (int i = 0; i < strlen(meta_file_dir); ++i) {
+        final_meta_dir[count++] = meta_file_dir[i];
     }
-    final_dir[count] = '\0';
+    final_meta_dir[count] = '\0';
+
+    char* final_catalog_dir;
+    final_catalog_dir = new char[size_of_catalog_dir];
+    count = 0;
+    for (int i = 0; i < strlen(data_dir); ++i) {
+        final_catalog_dir[count++] = data_dir[i];
+    }
+    for (int i = 0; i < strlen(catalog_file_dir); ++i) {
+        final_catalog_dir[count++] = catalog_file_dir[i];
+    }
+    final_catalog_dir[count] = '0';
+    final_catalog_dir[count + 1] = '\0';
     // 新建ehash_metadata文件
-    metadata = (ehash_metadata*)pmem_map_file(final_dir, sizeof(ehash_metadata), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
-    metadata->global_depth = 1;
-    metadata->max_file_id = 0;
-    metadata->catalog_size = 2;
-    allocNewPage(); // 直接获取一个新的页面
-    // 直接新建两个桶
-    catalog.buckets_pm_address = new pm_address[2];
-    catalog.buckets_virtual_address = new pm_bucket*[2];
-    for (int i = 0; i < 2; ++i) {
-        pm_address new_pm_address;
-        pm_bucket* new_bucket = (pm_bucket*)getFreeSlot(new_pm_address);
-        new_bucket->bitmap[0] = 0;
-        new_bucket->bitmap[1] = 0;
-        new_bucket->local_depth = metadata->global_depth;
-        catalog.buckets_pm_address[i].fileId = new_pm_address.fileId;
-        catalog.buckets_pm_address[i].offset = new_pm_address.offset;
-        catalog.buckets_virtual_address[i] = new_bucket;
+
+    std::ifstream fin(final_meta_dir);
+    if (!fin) {
+        fin.close();
+        metadata = (ehash_metadata*)pmem_map_file(final_meta_dir, sizeof(ehash_metadata), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
+        metadata->max_file_id = 0;
+        metadata->catalog_size = 2;
+        metadata->global_depth = 1;
+        pmem_persist(metadata,sizeof(ehash_metadata));
+        allocNewPage(); // 直接获取一个新的页面
+        catalog_file_table = new catalog_page_file*[1];
+        catalog_file_table[0] = (catalog_page_file*)pmem_map_file(final_catalog_dir, sizeof(catalog_page_file), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
+        // 直接新建两个桶
+        catalog.buckets_pm_address = new pm_address[2];
+        catalog.buckets_virtual_address = new pm_bucket*[2];
+        // 对目录文件、目录进行初始化
+        for (int i = 0; i < 2; ++i) {
+            pm_address new_pm_address;
+            pm_bucket* new_bucket = (pm_bucket*)getFreeSlot(new_pm_address);
+            new_bucket->bitmap[0] = 0;
+            new_bucket->bitmap[1] = 0;
+            new_bucket->local_depth = metadata->global_depth;
+            catalog.buckets_pm_address[i].fileId = new_pm_address.fileId;
+            catalog.buckets_pm_address[i].offset = new_pm_address.offset;
+            catalog.buckets_virtual_address[i] = new_bucket;
+            catalog_file_table[0]->catalog_item[i].fileId = new_pm_address.fileId;
+            catalog_file_table[0]->catalog_item[i].offset = new_pm_address.offset;
+        }
+        
+    } else {
+        string scan;
+        printf("Use origin file to open? [Y]/[N]\n"); // 判断是否使用复原方法
+        std::cin >> scan;
+        if(scan[0] == 'y' || scan[0] == 'Y'){
+            fin.close();
+            recover();
+        } else {
+            fin.close();
+            metadata = (ehash_metadata*)pmem_map_file(final_meta_dir, sizeof(ehash_metadata), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
+            metadata->max_file_id = 0;
+            metadata->catalog_size = 2;
+            metadata->global_depth = 1;
+            pmem_persist(metadata,sizeof(ehash_metadata));
+            allocNewPage(); // 直接获取一个新的页面
+            catalog_file_table = new catalog_page_file*[1];
+            catalog_file_table[0] = (catalog_page_file*)pmem_map_file(final_catalog_dir, sizeof(catalog_page_file), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
+            // 直接新建两个桶
+            catalog.buckets_pm_address = new pm_address[2];
+            catalog.buckets_virtual_address = new pm_bucket*[2];
+            for (int i = 0; i < 2; ++i) {
+                pm_address new_pm_address;
+                pm_bucket* new_bucket = (pm_bucket*)getFreeSlot(new_pm_address);
+                new_bucket->bitmap[0] = 0;
+                new_bucket->bitmap[1] = 0;
+                new_bucket->local_depth = metadata->global_depth;
+                catalog.buckets_pm_address[i].fileId = new_pm_address.fileId;
+                catalog.buckets_pm_address[i].offset = new_pm_address.offset;
+                catalog.buckets_virtual_address[i] = new_bucket;
+                catalog_file_table[0]->catalog_item[i].fileId = new_pm_address.fileId;
+                catalog_file_table[0]->catalog_item[i].offset = new_pm_address.offset;
+            }
+        }
     }
 }
 /**
@@ -54,11 +115,18 @@ PmEHash::PmEHash()
  */
 PmEHash::~PmEHash()
 {
-    // pmem_persist(metadata, sizeof(ehash_metadata));
+    pmem_persist(metadata, sizeof(ehash_metadata));
     pmem_unmap(metadata, sizeof(ehash_metadata));
     for (int i = 0; i < metadata->max_file_id; ++i) {
-        // pmem_persist(page_pointer_table[i], sizeof(data_page));
+        // 因为我们是每个操作都会进行persist，因此这里就不进行了
         pmem_unmap(page_pointer_table[i], sizeof(data_page));
+    }
+    uint64_t cat_size = 0;
+    if(metadata->catalog_size < 512) cat_size = 1;
+    else cat_size = metadata->catalog_size / 512;
+    for (int i = 0; i < cat_size; ++i){
+        pmem_persist(catalog_file_table[i],sizeof(catalog_page_file));
+        pmem_unmap(catalog_file_table[i],sizeof(catalog_page_file));
     }
 }
 
@@ -72,11 +140,12 @@ int PmEHash::insert(kv new_kv_pair)
     uint64_t returnSearchValue;
     if (search(new_kv_pair.key, returnSearchValue) == 0)
         return -1;
-    pm_bucket* toInsertBucket = getFreeBucket(new_kv_pair.key);
-    kv* freePlace = getFreeKvSlot(toInsertBucket);
+    pm_bucket* toInsertBucket = getFreeBucket(new_kv_pair.key); // 找到可以插入的桶的虚拟地址
+    kv* freePlace = getFreeKvSlot(toInsertBucket); // 找到该桶中的kv位置
     freePlace->key = new_kv_pair.key;
     freePlace->value = new_kv_pair.value;
     pm_address persist_address = vAddr2pmAddr.find(toInsertBucket)->second;
+        // 修改页表文件里面的内容
     uint32_t fid = persist_address.fileId;
     int index_bitmap = (persist_address.offset - 2) / 255;
     page_pointer_table[fid]->page_bucket[index_bitmap].bitmap[0] = toInsertBucket->bitmap[0];
@@ -86,6 +155,7 @@ int PmEHash::insert(kv new_kv_pair)
         page_pointer_table[fid]->page_bucket[index_bitmap].inner_kv[i].value = toInsertBucket->slot[i].value;
     }
     pmem_persist(page_pointer_table[fid], sizeof(data_page)); // 每次insert操作之后都会进行persist
+    
     return 0;
 }
 
@@ -96,39 +166,7 @@ int PmEHash::insert(kv new_kv_pair)
  */
 int PmEHash::remove(uint64_t key)
 {
-    uint64_t returnSearchValue;
-    if (search(key, returnSearchValue) == -1)
-        return -1;
-    uint64_t bucketID = hashFunc(key);
-    uint8_t temp = 128;
-    uint32_t fid = vAddr2pmAddr.find(catalog.buckets_virtual_address[bucketID])->second.fileId;
-
-    for (int i = 0; i < 8; ++i) {
-        if ((catalog.buckets_virtual_address[bucketID]->bitmap[0] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == key) {
-            catalog.buckets_virtual_address[bucketID]->bitmap[0] &= (~(1 << (7 - i)));
-            page_pointer_table[fid]->page_bucket->bitmap[0] &= (~(1 << (7 - i)));
-            pmem_persist(page_pointer_table[fid], sizeof(data_page)); // 每次remove操作之后都会进行persist
-            // if(catalog.buckets_virtual_address[bucketID]->bitmap[0] == 0 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 0){
-            //     mergeBucket(bucketID);
-            // }
-            return 0;
-        }
-        temp >>= 1;
-    }
-    temp = 128;
-    for (int i = 8; i < 15; ++i) {
-        if ((catalog.buckets_virtual_address[bucketID]->bitmap[1] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == key) {
-            catalog.buckets_virtual_address[bucketID]->bitmap[1] &= (~(1 << (15 - i)));
-            page_pointer_table[fid]->page_bucket->bitmap[1] &= (~(1 << (15 - i)));
-            pmem_persist(page_pointer_table[fid], sizeof(data_page)); // 每次remove操作之后都会进行persist
-            // if(catalog.buckets_virtual_address[bucketID]->bitmap[0] == 0 && catalog.buckets_virtual_address[bucketID]->bitmap[1] == 0){
-            //     mergeBucket(bucketID);
-            // }
-            return 0;
-        }
-        temp >>= 1;
-    }
-    return -1;
+    return 1;
 }
 /**
  * @description: 更新现存的键值对的值
@@ -137,37 +175,7 @@ int PmEHash::remove(uint64_t key)
  */
 int PmEHash::update(kv kv_pair)
 {
-    uint64_t returnSearchValue;
-    if (search(kv_pair.key, returnSearchValue) == -1)
-        return -1;
-    uint64_t bucketID = hashFunc(kv_pair.key);
-    uint8_t bit_map[2];
-    bit_map[0] = catalog.buckets_virtual_address[bucketID]->bitmap[0];
-    bit_map[1] = catalog.buckets_virtual_address[bucketID]->bitmap[1];
-    uint32_t fid = vAddr2pmAddr.find(catalog.buckets_virtual_address[bucketID])->second.fileId;
-    uint32_t off = vAddr2pmAddr.find(catalog.buckets_virtual_address[bucketID])->second.offset;
-    uint32_t index = (off - 2) / 255;
-    uint8_t temp = 128;
-    for (int i = 0; i < 8; ++i) {
-        if ((bit_map[0] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == kv_pair.key) {
-            catalog.buckets_virtual_address[bucketID]->slot[i].value = kv_pair.value;
-            page_pointer_table[fid]->page_bucket->inner_kv[index].value = kv_pair.value;
-            pmem_persist(page_pointer_table[fid], sizeof(data_page)); // 每次update操作之后都会进行persist
-            return 0;
-        }
-        temp >>= 1;
-    }
-    temp = 128;
-    for (int i = 8; i < 15; ++i) {
-        if ((bit_map[1] & temp) != 0 && catalog.buckets_virtual_address[bucketID]->slot[i].key == kv_pair.key) {
-            catalog.buckets_virtual_address[bucketID]->slot[i].value = kv_pair.value;
-            page_pointer_table[fid]->page_bucket->inner_kv[index].value = kv_pair.value;
-            pmem_persist(page_pointer_table[fid], sizeof(data_page)); // 每次update操作之后都会进行persist
-            return 0;
-        }
-        temp >>= 1;
-    }
-    return -1;
+    return 1;
 }
 /**
  * @description: 查找目标键值对数据，将返回值放在参数里的引用类型进行返回
@@ -287,7 +295,7 @@ kv* PmEHash::getFreeKvSlot(pm_bucket* bucket)
     uint8_t temp = 128;
     for (toInsertSlotIndex = 0; toInsertSlotIndex < 8; ++toInsertSlotIndex) {
         if ((bucket_map[0] & temp) == 0) {
-            bucket->bitmap[0] ^= (bucket->bitmap[0] & (1 << (7 - toInsertSlotIndex)) ^ (1 << (7 - toInsertSlotIndex)));
+            bucket->bitmap[0] ^= (bucket->bitmap[0] & (1 << (7 - toInsertSlotIndex)) ^ (1 << (7 - toInsertSlotIndex))); // 设置该桶内的该kv位为1
             kv* to_return_kv = &bucket->slot[toInsertSlotIndex];
             return to_return_kv;
         } else {
@@ -298,7 +306,7 @@ kv* PmEHash::getFreeKvSlot(pm_bucket* bucket)
         temp = 128;
         for (toInsertSlotIndex = 8; toInsertSlotIndex < 15; ++toInsertSlotIndex) {
             if ((bucket_map[1] & temp) == 0) {
-                bucket->bitmap[1] ^= (bucket->bitmap[1] & (1 << (15 - toInsertSlotIndex)) ^ (1 << (15 - toInsertSlotIndex)));
+                bucket->bitmap[1] ^= (bucket->bitmap[1] & (1 << (15 - toInsertSlotIndex)) ^ (1 << (15 - toInsertSlotIndex))); // 设置该桶内的该kv位为1
                 kv* to_return_kv = &bucket->slot[toInsertSlotIndex];
                 return to_return_kv;
             } else {
@@ -341,13 +349,16 @@ void PmEHash::splitBucket(uint64_t bucket_id)
     new_bucket->local_depth = ori_bucket->local_depth;
     new_bucket->bitmap[0] = 0;
     new_bucket->bitmap[1] = 0;
-    // 桶的局部深度自增后，修改目录表项
+    // 桶的局部深度自增后，更新目录表项，防止出现无限倍增桶的情况
     uint64_t yu = to_bucket_id % (1 << ori_bucket->local_depth);
     for (int i = 0; i < metadata->catalog_size; ++i) {
         if ((i % (1 << ori_bucket->local_depth)) == yu) {
             catalog.buckets_virtual_address[i] = new_bucket;
+            catalog_file_table[i/512]->catalog_item[i%512].fileId = new_pm_address.fileId;
+            catalog_file_table[i/512]->catalog_item[i%512].offset = new_pm_address.offset;
         }
     }
+    // 对该分裂桶的所有kv进行一次重新哈希
     uint64_t to_insert_bucketid;
     kv* temp_kv;
     for (int i = 0; i < BUCKET_SLOT_NUM; ++i) {
@@ -356,9 +367,12 @@ void PmEHash::splitBucket(uint64_t bucket_id)
         temp_kv->key = ori_kv[i].key;
         temp_kv->value = ori_kv[i].value;
     }
+    // 对目录和目录文件的内容进行修改
     catalog.buckets_pm_address[to_bucket_id].fileId = new_pm_address.fileId;
     catalog.buckets_pm_address[to_bucket_id].offset = new_pm_address.offset;
-
+    catalog_file_table[to_bucket_id/512]->catalog_item[to_bucket_id%512].fileId = new_pm_address.fileId;
+    catalog_file_table[to_bucket_id/512]->catalog_item[to_bucket_id%512].offset = new_pm_address.offset;
+    // 将分裂后的新桶的内容写回到页表文件中
     uint32_t new_fid = new_pm_address.fileId;
     int index_bitmap = (new_pm_address.offset - 2) / 255;
     page_pointer_table[new_fid]->bitmap ^= (page_pointer_table[new_fid]->bitmap & (1 << (15 - index_bitmap)) ^ (1 << (15 - index_bitmap)));
@@ -369,7 +383,7 @@ void PmEHash::splitBucket(uint64_t bucket_id)
         page_pointer_table[new_fid]->page_bucket[index_bitmap].inner_kv[i].value = new_bucket->slot[i].value;
     }
     pmem_persist(page_pointer_table[new_fid], sizeof(data_page));
-
+    // 将分裂前的旧桶的内容写回到页表文件中
     pm_address ori_pm_address = vAddr2pmAddr.find(ori_bucket)->second;
     uint32_t ori_fid = ori_pm_address.fileId;
     index_bitmap = (ori_pm_address.offset - 2) / 255;
@@ -381,6 +395,7 @@ void PmEHash::splitBucket(uint64_t bucket_id)
         page_pointer_table[ori_fid]->page_bucket[index_bitmap].inner_kv[i].value = ori_bucket->slot[i].value;
     }
     pmem_persist(page_pointer_table[ori_fid], sizeof(data_page));
+    
 }
 
 /**
@@ -400,6 +415,7 @@ void PmEHash::mergeBucket(uint64_t bucket_id)
         if (catalog.buckets_virtual_address[i]->local_depth >= metadata->global_depth)
             break;
     }
+    // 只有所有的桶的local_depth都小于全局深度才会进入这里
     if (i == metadata->catalog_size && i > 2) {
         uint64_t ori_cata_size = metadata->catalog_size;
         ehash_catalog temp_catalog;
@@ -428,24 +444,88 @@ void PmEHash::mergeBucket(uint64_t bucket_id)
 void PmEHash::extendCatalog()
 {
     uint64_t ori_cata_size = metadata->catalog_size;
+    int ori_cata_file_num;
+    if(ori_cata_size < 512){
+        ori_cata_file_num = 1;
+    } else {
+        ori_cata_file_num = ori_cata_size / 512;
+    }
     uint64_t free_bucket_size = free_list.size();
+    // 构建临时的页面进行备份
     ehash_catalog temp_catalog;
     temp_catalog.buckets_pm_address = new pm_address[ori_cata_size];
     temp_catalog.buckets_virtual_address = new pm_bucket*[ori_cata_size];
+    catalog_page_file* temp_catalog_file_table[ori_cata_file_num];
     for (int i = 0; i < ori_cata_size; ++i) {
         temp_catalog.buckets_pm_address[i] = catalog.buckets_pm_address[i];
         temp_catalog.buckets_virtual_address[i] = catalog.buckets_virtual_address[i];
     }
+    for(int i = 0; i < ori_cata_file_num; ++i) {
+        temp_catalog_file_table[i] = catalog_file_table[i];
+    }
+    // 直接新建两倍的目录项
     catalog.buckets_pm_address = new pm_address[ori_cata_size * 2];
     catalog.buckets_virtual_address = new pm_bucket*[ori_cata_size * 2];
+    
+    size_t map_len;
+    int is_pmem;
+    if(ori_cata_size >= 512){
+        catalog_file_table = new catalog_page_file*[ori_cata_file_num * 2];
+    }
+    // 对新增的页面进行桶地址的映射
     for (int i = 0; i < ori_cata_size; ++i) {
         catalog.buckets_pm_address[i] = temp_catalog.buckets_pm_address[i];
         catalog.buckets_virtual_address[i] = temp_catalog.buckets_virtual_address[i];
         catalog.buckets_pm_address[ori_cata_size + i] = temp_catalog.buckets_pm_address[i];
         catalog.buckets_virtual_address[ori_cata_size + i] = temp_catalog.buckets_virtual_address[i];
     }
+    // 创建新的页面文件
+    const char* data_dir = PM_EHASH_DIRECTORY;
+    const char* catalog_file_dir = CATALOG_NAME;
+    int size_of_catalog_dir = strlen(data_dir) + strlen(catalog_file_dir) + 1;
+    int count = 0;
+    char* temp_catalog_dir;
+    temp_catalog_dir = new char[size_of_catalog_dir];
+    for (int i = 0; i < strlen(data_dir); ++i) {
+        temp_catalog_dir[count++] = data_dir[i];
+    }
+    for (int i = 0; i < strlen(catalog_file_dir); ++i) {
+        temp_catalog_dir[count++] = catalog_file_dir[i];
+    }
+    temp_catalog_dir[count] = '\0';
+    std::string fin_catalog_dir = "";
+    for(int i = 0; i < count; ++i){
+        fin_catalog_dir += temp_catalog_dir[i];
+    }
+    std::string temp_fin_catalog_dir = fin_catalog_dir;
+    for (int i = 0; i < ori_cata_size; ++i) {
+        // 每到512个目录项才会新建一个目录文件
+        if(i % 512 == 0){
+            std::string num2string = std::to_string(i/512);
+            fin_catalog_dir = temp_fin_catalog_dir;
+            fin_catalog_dir += num2string;
+            const char* final_catalog_dir = fin_catalog_dir.c_str();
+            // 使用动态创建的文件名进行新建
+            catalog_file_table[i/512] = (catalog_page_file*)pmem_map_file(final_catalog_dir, sizeof(catalog_page_file), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
+            // catalog_file_table[i/512] = temp_catalog_file_table[i/512];
+        } 
+        catalog_file_table[i/512]->catalog_item[i%512].fileId = catalog.buckets_pm_address[i].fileId;
+        catalog_file_table[i/512]->catalog_item[i%512].offset = catalog.buckets_pm_address[i].offset;
+        if((i + ori_cata_size) % 512 == 0){
+            std::string num2string = std::to_string((i + ori_cata_size) / 512);
+            fin_catalog_dir = temp_fin_catalog_dir;
+            fin_catalog_dir += num2string;
+            const char* final_catalog_dir = fin_catalog_dir.c_str();
+            catalog_file_table[(i + ori_cata_size) / 512] = (catalog_page_file*)pmem_map_file(final_catalog_dir, sizeof(catalog_page_file), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
+            // catalog_file_table[(i + ori_cata_size) / 512] = temp_catalog_file_table[i];
+        }
+        catalog_file_table[(i + ori_cata_size)/512]->catalog_item[(i + ori_cata_size)%512].fileId = catalog.buckets_pm_address[i+ori_cata_size].fileId;
+        catalog_file_table[(i + ori_cata_size)/512]->catalog_item[(i + ori_cata_size)%512].offset = catalog.buckets_pm_address[i+ori_cata_size].offset;
+    }
+
     metadata->catalog_size = ori_cata_size * 2;
     metadata->global_depth += 1;
+    
 }
 
 /**
@@ -459,7 +539,11 @@ void* PmEHash::getFreeSlot(pm_address& new_address)
         allocNewPage();
     }
     pm_bucket* new_bucket = free_list.front();
-    new_bucket->local_depth = metadata->global_depth; // maybe problem.
+    new_bucket->local_depth = metadata->global_depth; 
+    uint32_t fid = vAddr2pmAddr.find(new_bucket)->second.fileId;
+    uint32_t off = vAddr2pmAddr.find(new_bucket)->second.offset;
+    uint32_t index_bitmap = (off - 2) / 255;
+    page_pointer_table[fid]->bitmap ^= (page_pointer_table[fid]->bitmap & (1 << (15 - index_bitmap)) ^ (1 << (15 - index_bitmap))); // 设置该位置为1
     free_list.pop();
     new_address = vAddr2pmAddr.find(new_bucket)->second;
     return new_bucket;
@@ -472,21 +556,21 @@ void* PmEHash::getFreeSlot(pm_address& new_address)
  */
 void PmEHash::allocNewPage()
 {
-    const char *data_dir = PM_EHASH_DIRECTORY;
-    const char *data_file = FILE_NAME;
-    char *final_dir;
+    const char* data_dir = PM_EHASH_DIRECTORY;
+    const char* data_file = FILE_NAME;
+    char* final_dir;
     int size_of_dir = strlen(data_dir) + strlen(data_file) + 1;
     final_dir = new char[size_of_dir];
     int count = 0;
-    for(int i = 0; i < strlen(data_dir); ++i){
+    for (int i = 0; i < strlen(data_dir); ++i) {
         final_dir[count++] = data_dir[i];
     }
-    for(int i = 0; i < strlen(data_file); ++i){
+    for (int i = 0; i < strlen(data_file); ++i) {
         final_dir[count++] = data_file[i];
     }
     std::string file_name = "";
     final_dir[count] = '\0';
-    for(int i = 0; i < size_of_dir - 1; ++i){
+    for (int i = 0; i < size_of_dir - 1; ++i) {
         file_name += final_dir[i];
     }
     uint64_t name_id = metadata->max_file_id;
@@ -495,7 +579,7 @@ void PmEHash::allocNewPage()
     const char* file_name_c = file_name.c_str();
     size_t map_len;
     int is_pmem;
-    // 新建页表文件并初始化
+    // 使用动态创建的地址进行新建页表文件的创建 并初始化
     data_page* new_page = (data_page*)pmem_map_file(file_name_c, sizeof(data_page), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
     new_page->bitmap = 0;
     for (int i = 0; i < 13; ++i) {
@@ -529,7 +613,8 @@ void PmEHash::allocNewPage()
         vAddr2pmAddr.insert(std::make_pair(new_bucket[j], new_address[j]));
         pmAddr2vAddr.insert(std::make_pair(new_address[j], new_bucket[j]));
     }
-    metadata->max_file_id = metadata->max_file_id + 1;
+    metadata->max_file_id += 1;
+    pmem_persist(metadata, sizeof(ehash_metadata));
 }
 
 /**
@@ -539,6 +624,63 @@ void PmEHash::allocNewPage()
  */
 void PmEHash::recover()
 {
+    // 这里只是对meta_data里面的顶层数据进行还原
+    const char* data_dir = PM_EHASH_DIRECTORY;
+    const char* meta_file = META_NAME;
+    char* final_dir;
+    int size_of_dir = strlen(data_dir) + strlen(meta_file) + 1;
+    final_dir = new char[size_of_dir];
+    int count = 0;
+    for (int i = 0; i < strlen(data_dir); ++i) {
+        final_dir[count++] = data_dir[i];
+    }
+    for (int i = 0; i < strlen(meta_file); ++i) {
+        final_dir[count++] = meta_file[i];
+    }
+    final_dir[count] = '\0';
+    std::fstream file_d;
+    char catalog_size_temp[8];
+    char max_file_id_temp[8];
+    char global_depth_temp[8];
+    uint64_t catalog_size_num = 0;
+    uint64_t max_file_id_num = 0;
+    uint64_t global_depth_num = 0;
+    file_d.open(final_dir, std::ios::in | std::ios::out | std::ios::binary);
+    if (file_d.is_open()) {
+        for (int k = 0; k < 8; ++k) {
+            file_d >> max_file_id_temp[k];
+        }
+        for (int k = 7; k >= 0; --k) {
+            max_file_id_num = max_file_id_num * 128 + max_file_id_temp[k];
+        }
+        std::cout << "max_file_id_num:" << max_file_id_num << std::endl;
+
+        for (int k = 0; k < 8; ++k) {
+            file_d >> catalog_size_temp[k];
+        }
+        for (int k = 7; k >= 0; --k) {
+            catalog_size_num = catalog_size_num * 128 + catalog_size_temp[k];
+        }
+        std::cout << "catalog_size_num" << catalog_size_num << std::endl;
+        
+        for (int k = 0; k < 8; ++k) {
+            file_d >> global_depth_temp[k];
+        }
+        for (int k = 7; k >= 0; --k) {
+            global_depth_num = global_depth_num * 128 + global_depth_temp[k];
+        }
+        std::cout << "global_depth_num" << global_depth_num << std::endl;
+        file_d.close();
+    }
+    size_t map_len;
+    int is_pmem;
+    metadata = (ehash_metadata*)pmem_map_file(final_dir, sizeof(ehash_metadata), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
+    metadata->catalog_size = catalog_size_num;
+    metadata->max_file_id = max_file_id_num;
+    metadata->global_depth = global_depth_num;
+    pmem_persist(metadata,sizeof(ehash_metadata));
+    // 进入映射函数
+    mapAllPage();
 }
 
 /**
@@ -548,6 +690,205 @@ void PmEHash::recover()
  */
 void PmEHash::mapAllPage()
 {
+    const char* data_dir = PM_EHASH_DIRECTORY;
+    const char* data_file_name = FILE_NAME;
+    int size_of_data_file_dir = strlen(data_dir) + strlen(data_file_name) + 1;
+    int strcount = 0;
+    char *temp_data_file_dir = new char[size_of_data_file_dir];
+    for(int i = 0; i < strlen(data_dir); ++i){
+        temp_data_file_dir[strcount++] = data_dir[i];
+    }
+    for(int i = 0; i < strlen(data_file_name); ++i){
+        temp_data_file_dir[strcount++] = data_file_name[i];
+    }
+    temp_data_file_dir[strcount] = '\0';
+    std::string data_file_head_dir = "";
+    for(int i = 0; i < strcount; ++i){
+        data_file_head_dir += temp_data_file_dir[i];
+    }
+    std::string temp_data_file_head_dir = data_file_head_dir;
+    page_pointer_table = new data_page*[metadata->max_file_id];
+    data_page** page_pointer_table_temp;
+    page_pointer_table_temp = new data_page*[metadata->max_file_id];
+    for(int i = 0; i < metadata->max_file_id; ++i){
+        page_pointer_table_temp[i] = new data_page;
+    }
+    std::fstream file_d;
+    uint8_t temp_bitmap[2];
+    uint8_t temp_slot_bitmap[2];
+    uint8_t temp_key[8];
+    uint8_t temp_value[8];
+    uint8_t temp_unable;
+    uint16_t bitmap_get = 0;
+    uint8_t slotbitmap_get[2] = {0 , 0};
+    uint64_t key_get = 0;
+    uint64_t value_get = 0;
+    // 进行数据文件的读取
+    for(int i = 0; i < metadata->max_file_id; ++i){
+        data_file_head_dir = temp_data_file_head_dir;
+        std::string num2string = std::to_string(i);
+        data_file_head_dir += num2string;
+        const char* data_file_head_dir_cstr = data_file_head_dir.c_str();
+        if(file_d.is_open()) file_d.close();
+        file_d.open(data_file_head_dir_cstr, std::ios::in | std::ios::out | std::ios::binary);
+        bitmap_get = 0;
+        // 先读页表的bitmap
+        for(int j = 0; j < 2; ++j) {
+            file_d >> temp_bitmap[j];
+        }
+        for(int j = 1; j >= 0; --j) {
+            bitmap_get = bitmap_get * 128 + temp_bitmap[j];
+        }
+        page_pointer_table_temp[i]->bitmap = bitmap_get;
+        // 读6个空闲字节
+        for(int j = 0; j < 6; ++j) {
+            file_d >> temp_unable;
+        }
+        // 遍历每个slot的桶，然后读取内部的kv结构和bitmap结构
+        for(int slot_in_page = 0; slot_in_page < DATA_PAGE_SLOT_NUM; ++slot_in_page){
+            for(int j = 0; j < 2; ++j) {
+                file_d >> temp_slot_bitmap[j];
+            }
+            for(int j = 0; j < 2; ++j) {
+                page_pointer_table_temp[i]->page_bucket[slot_in_page].bitmap[j] = temp_slot_bitmap[j];
+            }
+            for(int j = 0; j < 6; ++j) {
+                file_d >> temp_unable;
+            }
+            for(int slot_in_bucket = 0; slot_in_bucket < BUCKET_SLOT_NUM; ++slot_in_bucket) {
+                key_get = 0;
+                value_get = 0;
+                for(int j = 0; j < 8; ++j){
+                    file_d >> temp_key[j];
+                }
+                for(int j = 7; j >= 0; --j){
+                    key_get = key_get * 128 + temp_key[j];
+                }
+                page_pointer_table_temp[i]->page_bucket[slot_in_page].inner_kv[slot_in_bucket].key = key_get;
+
+                for(int j = 0; j < 8; ++j){
+                    file_d >> temp_value[j];
+                }
+                for(int j = 7; j >= 0; --j){
+                    value_get = value_get * 128 + temp_value[j];
+                }
+                page_pointer_table_temp[i]->page_bucket[slot_in_page].inner_kv[slot_in_bucket].value = value_get;
+            }
+            for(int j = 0; j < 16; ++j) {
+                file_d >> temp_unable;
+            }
+        }
+    }
+    file_d.close();
+    size_t map_len;
+    int is_pmem;
+    // 创建新的数据文件用于存储，覆盖旧的数据文件
+    for(int i = 0; i < metadata->max_file_id; ++i){
+        data_file_head_dir = temp_data_file_head_dir;
+        std::string num2string = std::to_string(i);
+        data_file_head_dir += num2string;
+        const char* data_file_head_dir_cstr = data_file_head_dir.c_str();
+        page_pointer_table[i] = (data_page*)pmem_map_file(data_file_head_dir_cstr,sizeof(data_page), PMEM_FILE_CREATE, 0777, &map_len, &is_pmem);
+        page_pointer_table[i]->bitmap = page_pointer_table_temp[i]->bitmap;
+        for(int j = 0; j < DATA_PAGE_SLOT_NUM; ++j){
+            for(int k = 0; k < 2; ++k) page_pointer_table[i]->page_bucket[j].bitmap[k] =page_pointer_table_temp[i]->page_bucket[j].bitmap[k];
+            for(int k = 0; k < BUCKET_SLOT_NUM; ++k) {
+                page_pointer_table[i]->page_bucket[j].inner_kv[k].key =page_pointer_table_temp[i]->page_bucket[j].inner_kv[k].key ;
+                page_pointer_table[i]->page_bucket[j].inner_kv[k].value =page_pointer_table_temp[i]->page_bucket[j].inner_kv[k].value ;
+            }
+        }
+    }
+
+    const char* catalog_file_dir = CATALOG_NAME;
+    int size_of_catalog_dir = strlen(data_dir) + strlen(catalog_file_dir) + 1;
+    int count = 0;
+    char* temp_catalog_dir;
+    temp_catalog_dir = new char[size_of_catalog_dir];
+    for (int i = 0; i < strlen(data_dir); ++i) {
+        temp_catalog_dir[count++] = data_dir[i];
+    }
+    for (int i = 0; i < strlen(catalog_file_dir); ++i) {
+        temp_catalog_dir[count++] = catalog_file_dir[i];
+    }
+    temp_catalog_dir[count] = '\0';
+    std::string catalog_head_dir = "";
+    for(int i = 0; i < count; ++i){
+        catalog_head_dir += temp_catalog_dir[i];
+    }
+    std::string temp_catalog_head_dir = catalog_head_dir;
+    char fid_temp[4];
+    char off_temp[4];
+    uint32_t fid_get = 0;
+    uint32_t off_get = 0;
+    uint64_t catalog_page_file_num = (metadata->catalog_size % 512 == 0) ? (metadata->catalog_size / 512) : (metadata->catalog_size % 512 + 1);
+    catalog_file_table = new catalog_page_file*[catalog_page_file_num];
+    catalog.buckets_virtual_address = new pm_bucket*[metadata->catalog_size];
+    catalog.buckets_pm_address = new pm_address[metadata->catalog_size];
+    std::map<pm_address,uint32_t> address_table;
+    // 对目录文件进行读取
+    for(int i = 0; i < metadata->catalog_size; ++i){
+        // 当目录项每到512时，打开下一个目录文件
+        if(i % 512 == 0){
+            catalog_head_dir = temp_catalog_head_dir;
+            std::string num2string = std::to_string(i / 512);
+            catalog_head_dir += num2string;
+            const char* catalog_head_dir_cstr = catalog_head_dir.c_str();
+            if(file_d.is_open()) file_d.close();
+            file_d.open(catalog_head_dir_cstr, std::ios::in | std::ios::out | std::ios::binary);
+        }
+        fid_get = 0;
+        off_get = 0;
+        // 先读取目录最后指向的桶对应的物理地址的file_id
+        for(int j = 0; j < 4; ++j){
+            file_d >> fid_temp[j];
+        }
+        for(int j = 3; j >= 0; --j){
+            fid_get = fid_get * 128 + fid_temp[j];
+        }
+        catalog.buckets_pm_address[i].fileId = fid_get;
+        // 再读取目录最后指向的桶对应的物理地址的offset
+        for(int j = 0; j < 4; ++j){
+            file_d >> off_temp[j];
+        }
+        for(int j = 3; j >= 0; --j){
+            off_get = off_get * 128 + off_temp[j];
+        }
+        catalog.buckets_pm_address[i].offset = off_get;
+        pm_address new_address;
+        new_address.fileId = fid_get;
+        new_address.offset = off_get;
+        // 将所有出现物理地址组合放入map结构中，保证可以不重复
+        std::map<pm_address,uint32_t>::iterator iter;
+        for(iter = address_table.begin(); iter != address_table.end(); ++iter){
+            if(iter->first.fileId == new_address.fileId && iter->first.offset == new_address.fileId) {
+                address_table[new_address] += 1;
+                break;
+            }
+        }
+        if(iter == address_table.end()){
+            address_table.insert(std::make_pair(new_address,1));
+        }
+    }
+    file_d.close();
+    // 遍历每一个map表项，根据里面的物理地址，进行虚拟桶的创建，并写入哈希结构的两个映射表(vAddr2pmAddr和pmAddr2vAddr)中，最后构建好目录的映射即可完成整个recover
+    std::map<pm_address,uint32_t>::iterator iter;
+    for(iter = address_table.begin(); iter != address_table.end(); ++iter){
+        pm_bucket* new_bucket = new pm_bucket;
+        new_bucket->local_depth =  (metadata->global_depth >> iter->second);
+        new_bucket->bitmap[0] = page_pointer_table[iter->first.fileId]->page_bucket[(iter->first.offset-2)/255].bitmap[0];
+        new_bucket->bitmap[1] = page_pointer_table[iter->first.fileId]->page_bucket[(iter->first.offset-2)/255].bitmap[1];
+        for(int j = 0; j < BUCKET_SLOT_NUM; ++j){
+            new_bucket->slot[j].key = page_pointer_table[iter->first.fileId]->page_bucket[(iter->first.offset-2)/255].inner_kv[j].key;
+            new_bucket->slot[j].value = page_pointer_table[iter->first.fileId]->page_bucket[(iter->first.offset-2)/255].inner_kv[j].value;
+        }
+        vAddr2pmAddr.insert(std::make_pair(new_bucket,iter->first));
+        pmAddr2vAddr.insert(std::make_pair(iter->first,new_bucket));
+        for(int j = 0; j < metadata->catalog_size; ++j){
+            if(catalog.buckets_pm_address[j].fileId == iter->first.fileId && catalog.buckets_pm_address[j].offset == iter->first.offset){
+                catalog.buckets_virtual_address[j] = new_bucket;
+            }
+        }
+    }
 }
 
 /**
@@ -557,22 +898,22 @@ void PmEHash::mapAllPage()
  */
 void PmEHash::selfDestory()
 {
-    const char *data_dir = PM_EHASH_DIRECTORY;
-    const char *data_file = FILE_NAME;
-    char *final_dir;
+    const char* data_dir = PM_EHASH_DIRECTORY;
+    const char* data_file = FILE_NAME;
+    char* final_dir;
     int size_of_dir = strlen(data_dir) + strlen(data_file) + 1;
     final_dir = new char[size_of_dir];
     int count = 0;
-    for(int i = 0; i < strlen(data_dir); ++i){
+    for (int i = 0; i < strlen(data_dir); ++i) {
         final_dir[count++] = data_dir[i];
     }
-    for(int i = 0; i < strlen(data_file); ++i){
+    for (int i = 0; i < strlen(data_file); ++i) {
         final_dir[count++] = data_file[i];
     }
     std::string temp_file_name = "";
     std::string file_name;
     final_dir[count] = '\0';
-    for(int i = 0; i < size_of_dir - 1; ++i){
+    for (int i = 0; i < size_of_dir - 1; ++i) {
         temp_file_name += final_dir[i];
     }
     uint64_t name_id = metadata->max_file_id;
@@ -584,14 +925,15 @@ void PmEHash::selfDestory()
         // 删除data目录中的数据文件
         std::remove(file_name_c);
     }
-    const char *meta_file = META_NAME;
+
+    const char* meta_file = META_NAME;
     size_of_dir = strlen(data_dir) + strlen(meta_file) + 1;
     final_dir = new char[size_of_dir];
     count = 0;
-    for(int i = 0; i < strlen(data_dir); ++i){
+    for (int i = 0; i < strlen(data_dir); ++i) {
         final_dir[count++] = data_dir[i];
     }
-    for(int i = 0; i < strlen(meta_file); ++i){
+    for (int i = 0; i < strlen(meta_file); ++i) {
         final_dir[count++] = meta_file[i];
     }
     final_dir[count] = '\0';
@@ -600,6 +942,36 @@ void PmEHash::selfDestory()
     for (uint64_t i = 0; i < name_id; ++i) {
         page_pointer_table[i] = NULL;
     }
+
+    const char* cata_file = CATALOG_NAME;
+    size_of_dir = strlen(data_dir) + strlen(cata_file) + 1;
+    final_dir = new char[size_of_dir];
+    count = 0;
+    for (int i = 0; i < strlen(data_dir); ++i) {
+        final_dir[count++] = data_dir[i];
+    }
+    for (int i = 0; i < strlen(cata_file); ++i) {
+        final_dir[count++] = cata_file[i];
+    }
+    final_dir[count] = '\0';
+    std::string dir_string = "";
+    for(int i = 0; i < size_of_dir - 1; ++i){
+        dir_string += final_dir[i];
+    }
+    name_id = ((metadata->catalog_size / 512) == 0) ? 1 : (metadata->catalog_size / 512);
+    for (uint64_t i = 0; i < name_id; ++i) {
+        file_name = dir_string;
+        std::string name_id_str = std::to_string(i);
+        file_name += name_id_str;
+        const char* file_name_c = file_name.c_str();
+        // 删除data目录中的catalog文件
+        std::remove(file_name_c);
+    }
+    
+    for (uint64_t i = 0; i < name_id; ++i) {
+        catalog_file_table[i] = NULL;
+    }
+
     // 将目录清空
     for (int i = 0; i < metadata->catalog_size; ++i) {
         catalog.buckets_pm_address[i].fileId = 0;
